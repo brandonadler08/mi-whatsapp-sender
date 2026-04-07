@@ -36,8 +36,7 @@ RUN cd backend && npm ci --omit=dev
 COPY backend/ ./backend/
 COPY frontend/ ./frontend/
 
-# ── Volúmenes para datos persistentes ─────────────────────────────────────────
-VOLUME ["/app/backend/data", "/app/backend/.wwebjs_auth"]
+# ── Volúmenes para datos persistentes (Railway los maneja en UI) ─────────────────────────────────────────
 
 # ── Exposición y arranque ──────────────────────────────────────────────────────
 EXPOSE 3000
