@@ -1,0 +1,28 @@
+# ── Node ──────────────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Environment ────────────────────────────────────────────────────────────────
+.env
+.env.local
+.env.production
+
+# ── WhatsApp session data (credentials — never commit) ────────────────────────
+backend/.wwebjs_auth/
+backend/.wwebjs_cache/
+
+# ── SQLite database (runtime data) ────────────────────────────────────────────
+backend/data/*.db
+
+# ── OS / Editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+*.swp
+*.swo
+
+# ── PM2 logs ──────────────────────────────────────────────────────────────────
+logs/
+*.log
