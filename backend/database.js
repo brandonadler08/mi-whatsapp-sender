@@ -35,7 +35,7 @@ async function init() {
       id         TEXT PRIMARY KEY,
       username   TEXT UNIQUE NOT NULL,
       password   TEXT NOT NULL,
-      role       TEXT DEFAULT 'user',
+      role       TEXT DEFAULT 'admin',
       created_at TEXT NOT NULL
     );
 
@@ -43,6 +43,9 @@ async function init() {
       client_id  TEXT PRIMARY KEY,
       label      TEXT,
       owner_id   TEXT,
+      proxy      TEXT,
+      ai_enabled INTEGER DEFAULT 0,
+      ai_prompt  TEXT,
       created_at TEXT NOT NULL
     );
 
@@ -88,14 +91,29 @@ async function init() {
     );
     CREATE INDEX IF NOT EXISTS idx_replies_session ON replies(session_id);
     CREATE INDEX IF NOT EXISTS idx_replies_read    ON replies(is_read);
+
+    CREATE TABLE IF NOT EXISTS proxy_pool (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      url        TEXT UNIQUE NOT NULL,
+      is_used    INTEGER DEFAULT 0,
+      session_id TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_proxy_used ON proxy_pool(is_used);
   `);
 
   // ── Migrations: add columns if they don't exist (for existing DBs) ──────────
   const migrations = [
     `ALTER TABLE sessions ADD COLUMN owner_id TEXT`,
     `ALTER TABLE batches  ADD COLUMN owner_id TEXT`,
+    `ALTER TABLE users    ADD COLUMN parent_id TEXT`,
+    `ALTER TABLE replies  ADD COLUMN asesor_id TEXT`,
     `CREATE INDEX IF NOT EXISTS idx_sess_owner  ON sessions(owner_id)`,
     `CREATE INDEX IF NOT EXISTS idx_batch_owner ON batches(owner_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_user_parent ON users(parent_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_replies_asesor ON replies(asesor_id)`,
+    `ALTER TABLE sessions ADD COLUMN proxy TEXT`,
+    `ALTER TABLE sessions ADD COLUMN ai_enabled INTEGER DEFAULT 0`,
+    `ALTER TABLE sessions ADD COLUMN ai_prompt TEXT`
   ];
   for (const sql of migrations) {
     try { db.run(sql); } catch (_) { /* column already exists — skip */ }
@@ -147,10 +165,11 @@ const stmts = {
   // ── Users ──────────────────────────────────────────────────────────────────
   createUser(u) {
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-    run(`INSERT INTO users (id, username, password, role, created_at)
-         VALUES (:id, :username, :password, :role, :created_at)`, {
+    run(`INSERT INTO users (id, username, password, role, created_at, parent_id)
+         VALUES (:id, :username, :password, :role, :created_at, :parent_id)`, {
       ':id': id, ':username': u.username, ':password': u.password,
-      ':role': u.role || 'user', ':created_at': new Date().toISOString()
+      ':role': u.role || 'admin', ':created_at': new Date().toISOString(),
+      ':parent_id': u.parent_id || null
     });
     return id;
   },
@@ -160,11 +179,18 @@ const stmts = {
   },
 
   getUserById(id) {
-    return get(`SELECT id, username, role, created_at FROM users WHERE id = :id`, { ':id': id });
+    return get(`SELECT id, username, role, created_at, parent_id FROM users WHERE id = :id`, { ':id': id });
   },
 
-  listUsers() {
-    return all(`SELECT id, username, role, created_at FROM users ORDER BY created_at ASC`);
+  listUsers(parentId = null) {
+    if (parentId) {
+      return all(`SELECT id, username, role, created_at FROM users WHERE parent_id = :parent ORDER BY created_at ASC`, {':parent': parentId});
+    }
+    return all(`SELECT id, username, role, created_at, parent_id FROM users ORDER BY created_at ASC`);
+  },
+
+  getAsesoresByOwner(ownerId) {
+    return all(`SELECT id, username FROM users WHERE role = 'asesor' AND parent_id = :owner ORDER BY created_at ASC`, { ':owner': ownerId });
   },
 
   deleteUser(id) {
@@ -238,14 +264,38 @@ const stmts = {
 
   // ── Replies ────────────────────────────────────────────────────────────────
   insertReply(r) {
-    run(`INSERT OR IGNORE INTO replies (id, session_id, from_number, author_name, message_text, timestamp, is_read)
-         VALUES (:id, :session_id, :from_number, :author_name, :message_text, :timestamp, 0)`, {
+    run(`INSERT OR IGNORE INTO replies (id, session_id, from_number, author_name, message_text, timestamp, is_read, asesor_id)
+         VALUES (:id, :session_id, :from_number, :author_name, :message_text, :timestamp, 0, :asesor_id)`, {
       ':id': r.id, ':session_id': r.session_id, ':from_number': r.from_number,
-      ':author_name': r.author_name || '', ':message_text': r.message_text || '', ':timestamp': r.timestamp
+      ':author_name': r.author_name || '', ':message_text': r.message_text || '',
+      ':timestamp': r.timestamp, ':asesor_id': r.asesor_id || null
     });
   },
 
-  getReplies(ownerId = null, limit = 500) {
+  getLatestReplyFromNumber(sessionId, fromNumber) {
+    return get(`SELECT * FROM replies WHERE session_id = :sid AND from_number = :num ORDER BY timestamp DESC LIMIT 1`, {
+      ':sid': sessionId, ':num': fromNumber
+    });
+  },
+
+  getReplyCountFromNumber(sessionId, fromNumber) {
+    const row = get(`SELECT COUNT(*) as cnt FROM replies WHERE session_id = :sid AND from_number = :num`, {
+      ':sid': sessionId, ':num': fromNumber
+    });
+    return row ? row.cnt : 0;
+  },
+
+  getReplies(ownerId = null, limit = 500, asesorId = null) {
+    if (asesorId) {
+      return all(`
+        SELECT r.*, s.label as session_name 
+        FROM replies r
+        LEFT JOIN sessions s ON r.session_id = s.client_id
+        WHERE r.asesor_id = :asesor
+        ORDER BY r.timestamp DESC
+        LIMIT :limit
+      `, { ':asesor': asesorId, ':limit': limit });
+    }
     if (ownerId) {
       return all(`
         SELECT r.*, s.label as session_name 
@@ -299,11 +349,26 @@ const stmts = {
 
   // ── Session persistence ────────────────────────────────────────────────────
   insertSession(s) {
-    run(`INSERT OR REPLACE INTO sessions (client_id, label, owner_id, created_at)
-         VALUES (:client_id, :label, :owner_id, :created_at)`, {
+    run(`INSERT OR REPLACE INTO sessions (client_id, label, owner_id, proxy, ai_enabled, ai_prompt, created_at)
+         VALUES (:client_id, :label, :owner_id, :proxy, :ai_enabled, :ai_prompt, :created_at)`, {
       ':client_id': s.clientId, ':label': s.label || s.clientId,
       ':owner_id': s.owner_id || null,
+      ':proxy': s.proxy || null,
+      ':ai_enabled': s.ai_enabled ? 1 : 0,
+      ':ai_prompt': s.ai_prompt || null,
       ':created_at': s.created_at || new Date().toISOString()
+    });
+  },
+
+  updateSessionAI(clientId, enabled, prompt) {
+    run(`UPDATE sessions SET ai_enabled = :en, ai_prompt = :pr WHERE client_id = :id`, {
+      ':id': clientId, ':en': enabled ? 1 : 0, ':pr': prompt
+    });
+  },
+
+  updateSessionProxy(clientId, proxy) {
+    run(`UPDATE sessions SET proxy = :proxy WHERE client_id = :id`, {
+      ':id': clientId, ':proxy': proxy
     });
   },
 
@@ -320,32 +385,56 @@ const stmts = {
     return all(`SELECT * FROM sessions ORDER BY created_at ASC`);
   },
 
-  getSessionsByOwner(ownerId) {
-    return all(`SELECT * FROM sessions WHERE owner_id = :owner ORDER BY created_at ASC`,
-      { ':owner': ownerId });
+  // ── Proxy Pool ────────────────────────────────────────────────────────────
+  addProxiesToPool(urls) {
+    const stmt = db.prepare(`INSERT OR IGNORE INTO proxy_pool (url) VALUES (:url)`);
+    urls.forEach(url => {
+      if (url && url.trim()) stmt.run({ ':url': url.trim() });
+    });
+    stmt.free();
+    saveToDisk();
   },
 
-  getTotalStats(ownerId = null) {
-    if (ownerId) {
-      return get(`
-        SELECT
-          COUNT(*) as total_messages,
-          SUM(CASE WHEN m.status='sent'  THEN 1 ELSE 0 END) as total_sent,
-          SUM(CASE WHEN m.status='error' THEN 1 ELSE 0 END) as total_errors,
-          COUNT(DISTINCT m.batch_id) as total_batches
-        FROM messages m
-        JOIN batches b ON b.id = m.batch_id
-        WHERE b.owner_id = :owner
-      `, { ':owner': ownerId });
+  getAvailableProxy(clientId) {
+    const proxy = get(`SELECT * FROM proxy_pool WHERE is_used = 0 LIMIT 1`);
+    if (proxy) {
+      run(`UPDATE proxy_pool SET is_used = 1, session_id = :sid WHERE id = :id`, {
+        ':sid': clientId, ':id': proxy.id
+      });
+      return proxy.url;
     }
-    return get(`
-      SELECT
-        COUNT(*) as total_messages,
-        SUM(CASE WHEN status='sent'  THEN 1 ELSE 0 END) as total_sent,
-        SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) as total_errors,
-        COUNT(DISTINCT batch_id) as total_batches
-      FROM messages
-    `);
+    return null;
+  },
+
+  releaseProxy(clientId) {
+    run(`UPDATE proxy_pool SET is_used = 0, session_id = NULL WHERE session_id = :sid`, {
+      ':sid': clientId
+    });
+  },
+
+  updateProxySession(clientId, newProxyUrl) {
+    // Release old
+    run(`UPDATE proxy_pool SET is_used = 0, session_id = NULL WHERE session_id = :sid`, { ':sid': clientId });
+    // If new exists in pool, mark it
+    if (newProxyUrl) {
+      run(`UPDATE proxy_pool SET is_used = 1, session_id = :sid WHERE url = :url`, {
+        ':sid': clientId, ':url': newProxyUrl.trim()
+      });
+    }
+  },
+
+  getProxyStats() {
+    const total = get(`SELECT COUNT(*) as c FROM proxy_pool`);
+    const used  = get(`SELECT COUNT(*) as c FROM proxy_pool WHERE is_used = 1`);
+    return { total: total ? total.c : 0, used: used ? used.c : 0 };
+  },
+
+  clearProxyPool() {
+    run(`DELETE FROM proxy_pool`);
+  },
+
+  getProxies() {
+    return all(`SELECT * FROM proxy_pool ORDER BY is_used ASC, id DESC`);
   }
 };
 

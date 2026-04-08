@@ -27,7 +27,10 @@
     "qrcode": "^1.5.3",
     "socket.io": "^4.7.2",
     "sql.js": "^1.14.1",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "openai": "^4.28.0",
+    "socks-proxy-agent": "^8.0.2",
+    "https-proxy-agent": "^7.0.4"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

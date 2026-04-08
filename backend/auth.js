@@ -1,6 +1,6 @@
 /**
  * auth.js — Autenticación JWT con bcryptjs
- * Roles: 'superadmin' | 'user'
+ * Roles: 'superadmin' | 'admin'
  * Token expiry: 24h
  */
 const bcrypt  = require('bcryptjs');

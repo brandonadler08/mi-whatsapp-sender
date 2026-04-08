@@ -1,611 +1,874 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>WhatsApp Sender — Panel Multi-Sesión</title>
-  <meta name="description" content="Panel de administración para envío masivo de mensajes WhatsApp con múltiples números vía QR." />
+  <meta name="description"
+    content="Panel de administración para envío masivo de mensajes WhatsApp con múltiples números vía QR." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
   <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
 
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- LOGIN SCREEN                                                               -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<div id="login-screen" class="login-screen" style="display:none">
-  <div class="login-bg-blur"></div>
-  <div class="login-card">
-    <div class="login-brand">
-      <div class="login-icon">💬</div>
-      <div class="login-brand-text">WA Sender</div>
-      <div class="login-brand-sub">Multi-Sesión v3</div>
-    </div>
-
-    <h1 class="login-title">Iniciar Sesión</h1>
-    <p class="login-subtitle">Accede a tu panel de administración</p>
-
-    <div id="login-error" class="login-error" style="display:none"></div>
-
-    <form id="login-form" onsubmit="doLogin(event)">
-      <div class="form-group">
-        <label class="form-label" for="login-username">Usuario</label>
-        <input class="form-control" id="login-username" type="text"
-               placeholder="superadmin" autocomplete="username" required />
+  <!-- ══════════════════════════════════════════════════════════════════════════ -->
+  <!-- LOGIN SCREEN                                                               -->
+  <!-- ══════════════════════════════════════════════════════════════════════════ -->
+  <div id="login-screen" class="login-screen" style="display:none">
+    <div class="login-bg-blur"></div>
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="login-icon">💬</div>
+        <div class="login-brand-text">WA Sender</div>
+        <div class="login-brand-sub">Multi-Sesión v3</div>
       </div>
-      <div class="form-group">
-        <label class="form-label" for="login-password">Contraseña</label>
-        <div class="input-password-wrap">
-          <input class="form-control" id="login-password" type="password"
-                 placeholder="••••••••" autocomplete="current-password" required />
-          <button type="button" class="btn-toggle-pw" onclick="togglePw()" id="btn-toggle-pw" title="Mostrar/ocultar contraseña">👁️</button>
+
+      <h1 class="login-title">Iniciar Sesión</h1>
+      <p class="login-subtitle">Accede a tu panel de administración</p>
+
+      <div id="login-error" class="login-error" style="display:none"></div>
+
+      <form id="login-form" onsubmit="doLogin(event)">
+        <div class="form-group">
+          <label class="form-label" for="login-username">Usuario</label>
+          <input class="form-control" id="login-username" type="text" placeholder="superadmin" autocomplete="username"
+            required />
         </div>
-      </div>
-      <button class="btn btn-primary btn-login" id="btn-login" type="submit">
-        <span id="btn-login-text">Entrar</span>
-        <span id="btn-login-spin" class="spinner-sm" style="display:none"></span>
-      </button>
-    </form>
+        <div class="form-group">
+          <label class="form-label" for="login-password">Contraseña</label>
+          <div class="input-password-wrap">
+            <input class="form-control" id="login-password" type="password" placeholder="••••••••"
+              autocomplete="current-password" required />
+            <button type="button" class="btn-toggle-pw" onclick="togglePw()" id="btn-toggle-pw"
+              title="Mostrar/ocultar contraseña">👁️</button>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-login" id="btn-login" type="submit">
+          <span id="btn-login-text">Entrar</span>
+          <span id="btn-login-spin" class="spinner-sm" style="display:none"></span>
+        </button>
+      </form>
 
-    <div class="login-footer">WA Sender v3 — Acceso restringido</div>
+      <div class="login-footer">WA Sender v3 — Acceso restringido</div>
+    </div>
   </div>
-</div>
 
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- MAIN APP                                                                  -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<div class="layout" id="app" style="display:none">
+  <!-- ══════════════════════════════════════════════════════════════════════════ -->
+  <!-- MAIN APP                                                                  -->
+  <!-- ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="layout" id="app" style="display:none">
 
-  <!-- ── Sidebar ─────────────────────────────────────────────────────────────── -->
-  <aside class="sidebar" id="sidebar">
-    <div class="sidebar-brand">
-      <a class="brand-logo" href="#">
-        <div class="brand-icon">💬</div>
-        <div>
-          <div class="brand-text">WA Sender</div>
-          <div class="brand-sub">Multi-Sesión v3</div>
-        </div>
-      </a>
-    </div>
-
-    <nav class="sidebar-nav">
-      <div class="nav-label">Principal</div>
-      <button class="nav-item active" id="nav-sessions" onclick="navigate('sessions')">
-        <span class="icon">📱</span> Sesiones
-      </button>
-      <button class="nav-item" id="nav-send" onclick="navigate('send')">
-        <span class="icon">✉️</span> Enviar Mensaje
-      </button>
-      <button class="nav-item" id="nav-bulk" onclick="navigate('bulk')">
-        <span class="icon">🚀</span> Envío Masivo XLSX
-      </button>
-      <button class="nav-item" id="nav-inbox" onclick="navigate('inbox')">
-        <span class="icon">📥</span> Bandeja de Entrada
-        <span class="badge" id="badge-inbox" style="display:none;background:var(--danger)">0</span>
-      </button>
-
-      <div class="nav-label" style="margin-top:12px">Reportería</div>
-      <button class="nav-item" id="nav-reports" onclick="navigate('reports')">
-        <span class="icon">📊</span> Envío Activo
-        <span class="badge" id="badge-errors" style="display:none">0</span>
-      </button>
-      <button class="nav-item" id="nav-history" onclick="navigate('history')">
-        <span class="icon">🗄️</span> Historial DB
-        <span class="db-dot" id="db-dot" title="DB no disponible">●</span>
-      </button>
-      <button class="nav-item" id="nav-log" onclick="navigate('log')">
-        <span class="icon">📋</span> Registro
-      </button>
-
-      <!-- Admin only -->
-      <div class="nav-label admin-only" id="nav-label-admin" style="margin-top:12px;display:none">Administración</div>
-      <button class="nav-item admin-only" id="nav-training" onclick="navigate('training')" style="display:none">
-        <span class="icon">🏋️</span> Entrenamiento
-        <span class="badge" id="badge-training" style="display:none;background:var(--warning,#f59e0b)">●</span>
-      </button>
-      <button class="nav-item admin-only" id="nav-users" onclick="navigate('users')" style="display:none">
-        <span class="icon">👥</span> Usuarios
-      </button>
-    </nav>
-
-    <div class="sidebar-footer">
-      <!-- Logged-in user info -->
-      <div class="user-info-bar" id="user-info-bar">
-        <div class="user-avatar" id="user-avatar">?</div>
-        <div class="user-info-text">
-          <div class="user-info-name" id="user-info-name">—</div>
-          <div class="user-info-role" id="user-info-role">—</div>
-        </div>
-        <button class="btn-logout" id="btn-logout" onclick="doLogout()" title="Cerrar sesión">⏏</button>
-      </div>
-      <div class="conn-status">
-        <div class="conn-dot" id="conn-dot"></div>
-        <span id="conn-label">Desconectado</span>
-      </div>
-    </div>
-  </aside>
-
-  <!-- ── Main ────────────────────────────────────────────────────────────────── -->
-  <main class="main">
-    <header class="topbar">
-      <div class="topbar-title" id="topbar-title">Sesiones</div>
-      <div class="topbar-actions" id="topbar-actions">
-        <button class="btn btn-primary" onclick="openAddSessionModal()">＋ Nueva Sesión</button>
-      </div>
-    </header>
-
-    <!-- ── SESSIONS ──────────────────────────────────────────────────────────── -->
-    <section class="page active" id="page-sessions">
-      <div class="stats-row">
-        <div class="stat-card"><div class="stat-label">Total Sesiones</div><div class="stat-value" id="stat-total">0</div></div>
-        <div class="stat-card"><div class="stat-label">Conectadas</div><div class="stat-value" id="stat-ready">0</div></div>
-        <div class="stat-card"><div class="stat-label">Esperando QR</div><div class="stat-value" id="stat-qr">0</div></div>
-        <div class="stat-card"><div class="stat-label">Desconectadas</div><div class="stat-value" id="stat-disc">0</div></div>
-      </div>
-      <div id="empty-sessions" class="empty-state">
-        <div class="emoji">📵</div>
-        <h3>Sin sesiones activas</h3>
-        <p>Haz clic en <strong>Nueva Sesión</strong> para conectar un número de WhatsApp.</p>
-      </div>
-      <div class="sessions-grid" id="sessions-grid"></div>
-    </section>
-
-    <!-- ── SINGLE SEND ────────────────────────────────────────────────────────── -->
-    <section class="page" id="page-send">
-      <div class="section-header"><div><div class="section-title">Enviar Mensaje</div><div class="section-sub">Mensaje individual a un número específico</div></div></div>
-      <div style="max-width:560px">
-        <div class="card">
-          <div class="card-title">⚙️ Configuración</div>
-          <div class="form-group">
-            <label class="form-label" for="send-session">Sesión origen</label>
-            <select class="form-control" id="send-session"><option value="">— Selecciona una sesión conectada —</option></select>
+    <!-- ── Sidebar ─────────────────────────────────────────────────────────────── -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <a class="brand-logo" href="#">
+          <div class="brand-icon">💬</div>
+          <div>
+            <div class="brand-text">WA Sender</div>
+            <div class="brand-sub">Multi-Sesión v3</div>
           </div>
-          <div class="form-group">
-            <label class="form-label" for="send-to">Número destino (10 dígitos)</label>
-            <input class="form-control" id="send-to" type="tel" placeholder="5512345678" />
-            <div class="form-hint">Solo 10 dígitos sin código de país. Todos los números son MX (+52).</div>
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="send-msg">Mensaje</label>
-            <textarea class="form-control" id="send-msg" placeholder="Escribe tu mensaje..."></textarea>
-          </div>
-          <button class="btn btn-primary" id="btn-send-single" onclick="sendSingle()" style="width:100%">✉️ Enviar</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- ── BULK XLSX ───────────────────────────────────────────────────────────── -->
-    <section class="page" id="page-bulk">
-      <div class="section-header">
-        <div>
-          <div class="section-title">Envío Masivo XLSX</div>
-          <div class="section-sub">Sube un Excel · escribe la plantilla · inserta variables · envía</div>
-        </div>
+        </a>
       </div>
 
-      <div class="bulk-layout">
-        <div style="display:flex;flex-direction:column;gap:20px">
+      <nav class="sidebar-nav">
+        <div class="nav-label">Principal</div>
+        <button class="nav-item active" id="nav-sessions" onclick="navigate('sessions')">
+          <span class="icon">📱</span> Sesiones
+        </button>
+        <button class="nav-item" id="nav-send" onclick="navigate('send')">
+          <span class="icon">✉️</span> Enviar Mensaje
+        </button>
+        <button class="nav-item" id="nav-bulk" onclick="navigate('bulk')">
+          <span class="icon">🚀</span> Envío Masivo XLSX
+        </button>
+        <button class="nav-item" id="nav-inbox" onclick="navigate('inbox')">
+          <span class="icon">📥</span> Bandeja de Entrada
+          <span class="badge" id="badge-inbox" style="display:none;background:var(--danger)">0</span>
+        </button>
 
+        <div class="nav-label" style="margin-top:12px">Reportería</div>
+        <button class="nav-item" id="nav-reports" onclick="navigate('reports')">
+          <span class="icon">📊</span> Envío Activo
+          <span class="badge" id="badge-errors" style="display:none">0</span>
+        </button>
+        <button class="nav-item" id="nav-history" onclick="navigate('history')">
+          <span class="icon">🗄️</span> Historial DB
+          <span class="db-dot" id="db-dot" title="DB no disponible">●</span>
+        </button>
+        <button class="nav-item" id="nav-log" onclick="navigate('log')">
+          <span class="icon">📋</span> Registro
+        </button>
+
+        <!-- Admin only -->
+        <div class="nav-label admin-only" id="nav-label-admin" style="margin-top:12px;display:none">Administración</div>
+        <button class="nav-item admin-only" id="nav-training" onclick="navigate('training')" style="display:none">
+          <span class="icon">🏋️</span> Entrenamiento
+          <span class="badge" id="badge-training" style="display:none;background:var(--warning,#f59e0b)">●</span>
+        </button>
+        <button class="nav-item admin-only" id="nav-users" onclick="navigate('users')" style="display:none">
+          <span class="icon">👥</span> Usuarios
+        </button>
+        <button class="nav-item admin-only" id="nav-proxies" onclick="navigate('proxies')" style="display:none">
+          <span class="icon">🌐</span> Proxies
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <!-- Logged-in user info -->
+        <div class="user-info-bar" id="user-info-bar">
+          <div class="user-avatar" id="user-avatar">?</div>
+          <div class="user-info-text">
+            <div class="user-info-name" id="user-info-name">—</div>
+            <div class="user-info-role" id="user-info-role">—</div>
+          </div>
+          <button class="btn-logout" id="btn-logout" onclick="doLogout()" title="Cerrar sesión">⏏</button>
+        </div>
+        <div class="conn-status">
+          <div class="conn-dot" id="conn-dot"></div>
+          <span id="conn-label">Desconectado</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── Main ────────────────────────────────────────────────────────────────── -->
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-title" id="topbar-title">Sesiones</div>
+        <div class="topbar-actions" id="topbar-actions">
+          <button class="btn btn-primary" onclick="openAddSessionModal()">＋ Nueva Sesión</button>
+        </div>
+      </header>
+
+      <!-- ── SESSIONS ──────────────────────────────────────────────────────────── -->
+      <section class="page active" id="page-sessions">
+        <div class="stats-row">
+          <div class="stat-card">
+            <div class="stat-label">Total Sesiones</div>
+            <div class="stat-value" id="stat-total">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Conectadas</div>
+            <div class="stat-value" id="stat-ready">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Esperando QR</div>
+            <div class="stat-value" id="stat-qr">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Desconectadas</div>
+            <div class="stat-value" id="stat-disc">0</div>
+          </div>
+        </div>
+        <div id="empty-sessions" class="empty-state">
+          <div class="emoji">📵</div>
+          <h3>Sin sesiones activas</h3>
+          <p>Haz clic en <strong>Nueva Sesión</strong> para conectar un número de WhatsApp.</p>
+        </div>
+        <div class="sessions-grid" id="sessions-grid"></div>
+      </section>
+
+      <!-- ── SINGLE SEND ────────────────────────────────────────────────────────── -->
+      <section class="page" id="page-send">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Enviar Mensaje</div>
+            <div class="section-sub">Mensaje individual a un número específico</div>
+          </div>
+        </div>
+        <div style="max-width:560px">
           <div class="card">
-            <div class="card-title">📎 Archivo XLSX</div>
-            <div class="drop-zone" id="drop-zone" onclick="document.getElementById('xlsx-input').click()">
-              <div class="drop-icon">📂</div>
-              <div class="drop-text">Arrastra el archivo aquí o haz clic para seleccionar</div>
-              <div class="drop-hint"><code>numero</code> | <code>cuenta</code> | <code>nombre</code> | <code>saldo</code> | <code>fecha</code> | …</div>
-              <input type="file" id="xlsx-input" accept=".xlsx,.xls" style="display:none" onchange="handleXlsxFile(this.files[0])" />
-            </div>
-            <div id="file-info" style="display:none" class="file-info">
-              <span class="file-icon">📊</span>
-              <div style="flex:1">
-                <div class="file-name" id="file-name">—</div>
-                <div class="file-meta" id="file-meta">—</div>
-              </div>
-              <button class="btn btn-danger btn-sm" onclick="clearFile()">✕</button>
-            </div>
-            <div id="parse-errors" style="display:none" class="parse-errors"></div>
-          </div>
-
-          <div class="card">
-            <div class="card-title">📝 Plantilla del mensaje</div>
-            <div class="form-group" id="variable-section" style="display:none">
-              <label class="form-label">Variables detectadas <span style="color:var(--text-3);font-weight:400;text-transform:none">(clic para insertar)</span></label>
-              <div class="chip-group" id="var-chips"></div>
-            </div>
+            <div class="card-title">⚙️ Configuración</div>
             <div class="form-group">
-              <label class="form-label" for="bulk-template">Plantilla <span style="color:var(--text-3);font-weight:400;text-transform:none">— usa <code>{{variable}}</code></span></label>
-              <textarea class="form-control template-ta" id="bulk-template"
-                placeholder="Ej: Hola {{nombre}}, tu saldo pendiente es ${{saldo}}. Vence el {{fecha}}.&#10;&#10;Para más info responde este mensaje. 🙏"></textarea>
-              <div class="form-hint" id="template-char-count">0 caracteres</div>
-            </div>
-            <div id="preview-msg-section" style="display:none">
-              <label class="form-label">Vista previa (primera fila)</label>
-              <div class="preview-msg-box" id="preview-msg-box"></div>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-title">⚙️ Configuración de envío</div>
-            <div class="form-group">
-              <label class="form-label" for="batch-name">Nombre del lote</label>
-              <input class="form-control" id="batch-name" type="text" placeholder="Ej: Cobranza Abril 2025" />
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="bulk-session">Número origen</label>
-              <select class="form-control" id="bulk-session" onchange="checkBulkReady()">
-                <option value="">— Selecciona sesión o rotación —</option>
-                <option value="ALL">🔄 Todos los conectados (rotación)</option>
+              <label class="form-label" for="send-session">Sesión origen</label>
+              <select class="form-control" id="send-session">
+                <option value="">— Selecciona una sesión conectada —</option>
               </select>
             </div>
             <div class="form-group">
-              <label class="form-label">Retraso entre mensajes (aleatorio)</label>
-              <div style="display:flex;gap:10px;align-items:center">
-                <div style="flex:1">
-                  <div class="form-label" style="font-size:10px;margin-bottom:4px">MÍNIMO (ms)</div>
-                  <input class="form-control" id="bulk-delay-min" type="number" value="1000" min="500" max="60000" />
-                </div>
-                <div style="color:var(--text-3);padding-top:18px;font-size:18px">→</div>
-                <div style="flex:1">
-                  <div class="form-label" style="font-size:10px;margin-bottom:4px">MÁXIMO (ms)</div>
-                  <input class="form-control" id="bulk-delay-max" type="number" value="15000" min="500" max="60000" />
-                </div>
-              </div>
-              <div class="form-hint" id="delay-hint">Cada mensaje espera entre <b>1</b> y <b>15</b> segundos al azar</div>
+              <label class="form-label" for="send-to">Número destino (10 dígitos)</label>
+              <input class="form-control" id="send-to" type="tel" placeholder="5512345678" />
+              <div class="form-hint">Solo 10 dígitos sin código de país. Todos los números son MX (+52).</div>
             </div>
-
-            <div class="form-group" style="margin-top: 10px; background: rgba(99, 102, 241, 0.08); border: 1px dashed var(--accent); padding: 12px; border-radius: 8px;">
-              <label style="display:flex;align-items:center;cursor:pointer;gap:8px" title="Envía saludo dinámico y espera hasta que respondan.">
-                <input type="checkbox" id="bulk-warmup" checked style="accent-color:var(--accent);width:18px;height:18px" />
-                <span style="font-weight: 600; color:var(--text-1);">⚡ Módulo Antibloqueos (Saludo + 7min Espera)</span>
-              </label>
-              <div class="form-hint" style="margin-left: 26px; margin-top: 4px;">Envía saludo temporalizado ("Buenos días {nombre}"). Se colocará en <b>espera asíncrona</b> por 7 minutos máximo. Si contesta, el mensaje principal se le envía al instante. Esto dilata y asegura que el 100% será orgánico.</div>
+            <div class="form-group">
+              <label class="form-label" for="send-msg">Mensaje</label>
+              <textarea class="form-control" id="send-msg" placeholder="Escribe tu mensaje..."></textarea>
             </div>
-
-            <div id="bulk-progress-section" style="display:none;margin-bottom:14px">
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px">
-                <span style="color:var(--text-2)">Progreso</span>
-                <span id="bulk-progress-text" style="color:var(--accent)">0 / 0</span>
-              </div>
-              <div class="progress-bar-wrapper"><div class="progress-bar-fill" id="bulk-progress-bar"></div></div>
-              <div style="display:flex;gap:16px;margin-top:8px;font-size:12px">
-                <span style="color:var(--success)">✅ <span id="prog-ok">0</span> enviados</span>
-                <span style="color:var(--danger)">❌ <span id="prog-err">0</span> errores</span>
-              </div>
-            </div>
-
-            <button class="btn btn-primary" id="btn-send-bulk" onclick="sendBulkXlsx()" style="width:100%" disabled>
-              🚀 Iniciar Envío Masivo
-            </button>
+            <button class="btn btn-primary" id="btn-send-single" onclick="sendSingle()" style="width:100%">✉️
+              Enviar</button>
           </div>
         </div>
+      </section>
 
-        <div class="card" style="overflow:hidden;padding:0">
-          <div style="padding:20px 20px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)">
-            <span class="card-title" style="margin-bottom:0">👁️ Vista Previa XLSX</span>
-            <span class="badge-count" id="preview-count">0 filas</span>
-          </div>
-          <div id="preview-empty" class="empty-state" style="padding:30px 10px">
-            <div class="emoji" style="font-size:32px">📋</div>
-            <p style="font-size:13px">Sube un archivo XLSX para ver la vista previa</p>
-          </div>
-          <div id="preview-table-wrap" style="display:none;overflow:auto;max-height:580px">
-            <table class="data-table" id="preview-table">
-              <thead id="preview-thead"></thead>
-              <tbody id="preview-tbody"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ── LIVE REPORTS ───────────────────────────────────────────────────────── -->
-    <section class="page" id="page-reports">
-      <div class="section-header">
-        <div><div class="section-title">Envío Activo</div><div class="section-sub">Resultados en tiempo real de la sesión actual</div></div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <select class="form-control" id="filter-status" onchange="applyFilter()" style="width:160px;padding:7px 12px;font-size:13px">
-            <option value="">Todos los estados</option>
-            <option value="sent">✅ Enviados</option>
-            <option value="error">❌ Errores</option>
-          </select>
-          <button class="btn btn-secondary btn-sm" onclick="exportLiveCSV()">⬇️ Exportar CSV</button>
-          <button class="btn btn-danger btn-sm" onclick="clearReports()">🗑️ Limpiar</button>
-        </div>
-      </div>
-      <div class="stats-row" style="margin-bottom:20px">
-        <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value" id="rpt-total">0</div></div>
-        <div class="stat-card"><div class="stat-label">Enviados</div><div class="stat-value" style="-webkit-text-fill-color:var(--success)" id="rpt-sent">0</div></div>
-        <div class="stat-card"><div class="stat-label">Errores</div><div class="stat-value" style="-webkit-text-fill-color:var(--danger)" id="rpt-err">0</div></div>
-        <div class="stat-card"><div class="stat-label">Tasa Éxito</div><div class="stat-value" id="rpt-rate">—</div></div>
-      </div>
-      <div class="card" style="padding:0;overflow:hidden">
-        <div style="overflow-x:auto">
-          <table class="data-table report-table" id="report-table">
-            <thead>
-              <tr><th>#</th><th>Número</th><th>Cuenta</th><th>Mensaje enviado</th><th>Sesión</th><th>Estado</th><th>Error / Detalle</th><th>Hora</th></tr>
-            </thead>
-            <tbody id="report-tbody">
-              <tr><td colspan="8" style="text-align:center;color:var(--text-3);padding:40px">Sin registros aún. Realiza un envío masivo.</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <!-- ── HISTORY ────────────────────────────────────────────────────────────── -->
-    <section class="page" id="page-history">
-      <div id="history-list-view">
-        <div class="section-header">
-          <div><div class="section-title">Historial DB</div><div class="section-sub">Todos los lotes enviados guardados en SQLite</div></div>
-          <button class="btn btn-secondary btn-sm" onclick="loadHistory()">🔄 Actualizar</button>
-        </div>
-        <div class="stats-row" style="margin-bottom:24px">
-          <div class="stat-card"><div class="stat-label">Total Mensajes</div><div class="stat-value" id="hs-total">—</div></div>
-          <div class="stat-card"><div class="stat-label">Enviados</div><div class="stat-value" style="-webkit-text-fill-color:var(--success)" id="hs-sent">—</div></div>
-          <div class="stat-card"><div class="stat-label">Errores</div><div class="stat-value" style="-webkit-text-fill-color:var(--danger)" id="hs-errors">—</div></div>
-          <div class="stat-card"><div class="stat-label">Lotes</div><div class="stat-value" id="hs-batches">—</div></div>
-        </div>
-        <div id="no-db-warn" class="warn-box" style="display:none">
-          ⚠️ La base de datos SQLite no está disponible.
-        </div>
-        <div id="history-empty" class="empty-state" style="display:none">
-          <div class="emoji">🗄️</div><h3>Sin historial</h3><p>Los envíos masivos aparecerán aquí.</p>
-        </div>
-        <div class="history-grid" id="history-grid"></div>
-      </div>
-
-      <div id="history-detail-view" style="display:none">
+      <!-- ── BULK XLSX ───────────────────────────────────────────────────────────── -->
+      <section class="page" id="page-bulk">
         <div class="section-header">
           <div>
-            <button class="btn btn-secondary btn-sm" onclick="closeHistoryDetail()" style="margin-bottom:10px">← Volver al historial</button>
-            <div class="section-title" id="detail-title">Detalle del lote</div>
-            <div class="section-sub" id="detail-sub">—</div>
+            <div class="section-title">Envío Masivo XLSX</div>
+            <div class="section-sub">Sube un Excel · escribe la plantilla · inserta variables · envía</div>
           </div>
-          <div style="display:flex;gap:10px">
-            <select class="form-control" id="detail-filter" onchange="filterDetail()" style="width:160px;padding:7px 12px;font-size:13px">
-              <option value="">Todos</option><option value="sent">✅ Enviados</option><option value="error">❌ Errores</option>
+        </div>
+
+        <div class="bulk-layout">
+          <div style="display:flex;flex-direction:column;gap:20px">
+
+            <div class="card">
+              <div class="card-title">📎 Archivo XLSX</div>
+              <div class="drop-zone" id="drop-zone" onclick="document.getElementById('xlsx-input').click()">
+                <div class="drop-icon">📂</div>
+                <div class="drop-text">Arrastra el archivo aquí o haz clic para seleccionar</div>
+                <div class="drop-hint"><code>numero</code> | <code>cuenta</code> | <code>nombre</code> |
+                  <code>saldo</code> | <code>fecha</code> | …</div>
+                <input type="file" id="xlsx-input" accept=".xlsx,.xls" style="display:none"
+                  onchange="handleXlsxFile(this.files[0])" />
+              </div>
+              <div id="file-info" style="display:none" class="file-info">
+                <span class="file-icon">📊</span>
+                <div style="flex:1">
+                  <div class="file-name" id="file-name">—</div>
+                  <div class="file-meta" id="file-meta">—</div>
+                </div>
+                <button class="btn btn-danger btn-sm" onclick="clearFile()">✕</button>
+              </div>
+              <div id="parse-errors" style="display:none" class="parse-errors"></div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">📝 Plantilla del mensaje</div>
+              <div class="form-group" id="variable-section" style="display:none">
+                <label class="form-label">Variables detectadas <span
+                    style="color:var(--text-3);font-weight:400;text-transform:none">(clic para insertar)</span></label>
+                <div class="chip-group" id="var-chips"></div>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="bulk-template">Plantilla <span
+                    style="color:var(--text-3);font-weight:400;text-transform:none">— usa
+                    <code>{{variable}}</code></span></label>
+                <textarea class="form-control template-ta" id="bulk-template"
+                  placeholder="Ej: {Hola|Buen día|Hey} {{nombre}}, tu saldo pendiente es ${{saldo}}. Vence el {{fecha}}.&#10;&#10;Para más info responde este mensaje. 🙏"></textarea>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px">
+                  <div class="form-hint" id="template-char-count">0 caracteres</div>
+                  <div class="form-hint"><span style="color:var(--accent);font-weight:600">Tip:</span> Usa
+                    <code>{Hola|Buen día|Hey}</code> para Spintax</div>
+                </div>
+              </div>
+              <div id="preview-msg-section" style="display:none">
+                <label class="form-label">Vista previa (primera fila)</label>
+                <div class="preview-msg-box" id="preview-msg-box"></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">⚙️ Configuración de envío</div>
+              <div class="form-group">
+                <label class="form-label" for="batch-name">Nombre del lote</label>
+                <input class="form-control" id="batch-name" type="text" placeholder="Ej: Cobranza Abril 2025" />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="bulk-session">Número origen</label>
+                <select class="form-control" id="bulk-session" onchange="checkBulkReady()">
+                  <option value="">— Selecciona sesión o rotación —</option>
+                  <option value="ALL">🔄 Todos los conectados (rotación)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Retraso entre mensajes (aleatorio)</label>
+                <div style="display:flex;gap:10px;align-items:center">
+                  <div style="flex:1">
+                    <div class="form-label" style="font-size:10px;margin-bottom:4px">MÍNIMO (ms)</div>
+                    <input class="form-control" id="bulk-delay-min" type="number" value="1000" min="500" max="60000" />
+                  </div>
+                  <div style="color:var(--text-3);padding-top:18px;font-size:18px">→</div>
+                  <div style="flex:1">
+                    <div class="form-label" style="font-size:10px;margin-bottom:4px">MÁXIMO (ms)</div>
+                    <input class="form-control" id="bulk-delay-max" type="number" value="15000" min="500" max="60000" />
+                  </div>
+                </div>
+                <div class="form-hint" id="delay-hint">Cada mensaje espera entre <b>1</b> y <b>15</b> segundos al azar
+                </div>
+              </div>
+
+              <div class="form-group"
+                style="margin-top: 10px; background: rgba(99, 102, 241, 0.08); border: 1px dashed var(--accent); padding: 12px; border-radius: 8px;">
+                <label style="display:flex;align-items:center;cursor:pointer;gap:8px"
+                  title="Envía saludo dinámico y espera hasta que respondan.">
+                  <input type="checkbox" id="bulk-warmup" checked
+                    style="accent-color:var(--accent);width:18px;height:18px" />
+                  <span style="font-weight: 600; color:var(--text-1);">⚡ Módulo Antibloqueos (Saludo + 7min
+                    Espera)</span>
+                </label>
+                <div class="form-hint" style="margin-left: 26px; margin-top: 4px;">Envía saludo temporalizado ("Buenos
+                  días {nombre}"). Se colocará en <b>espera asíncrona</b> por 7 minutos máximo. Si contesta, el mensaje
+                  principal se le envía al instante. Esto dilata y asegura que el 100% será orgánico.</div>
+              </div>
+
+              <div id="bulk-progress-section" style="display:none;margin-bottom:14px">
+                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px">
+                  <span style="color:var(--text-2)">Progreso</span>
+                  <span id="bulk-progress-text" style="color:var(--accent)">0 / 0</span>
+                </div>
+                <div class="progress-bar-wrapper">
+                  <div class="progress-bar-fill" id="bulk-progress-bar"></div>
+                </div>
+                <div style="display:flex;gap:16px;margin-top:8px;font-size:12px">
+                  <span style="color:var(--success)">✅ <span id="prog-ok">0</span> enviados</span>
+                  <span style="color:var(--danger)">❌ <span id="prog-err">0</span> errores</span>
+                </div>
+              </div>
+
+              <button class="btn btn-primary" id="btn-send-bulk" onclick="sendBulkXlsx()" style="width:100%" disabled>
+                🚀 Iniciar Envío Masivo
+              </button>
+            </div>
+          </div>
+
+          <div class="card" style="overflow:hidden;padding:0">
+            <div
+              style="padding:20px 20px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)">
+              <span class="card-title" style="margin-bottom:0">👁️ Vista Previa XLSX</span>
+              <span class="badge-count" id="preview-count">0 filas</span>
+            </div>
+            <div id="preview-empty" class="empty-state" style="padding:30px 10px">
+              <div class="emoji" style="font-size:32px">📋</div>
+              <p style="font-size:13px">Sube un archivo XLSX para ver la vista previa</p>
+            </div>
+            <div id="preview-table-wrap" style="display:none;overflow:auto;max-height:580px">
+              <table class="data-table" id="preview-table">
+                <thead id="preview-thead"></thead>
+                <tbody id="preview-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── LIVE REPORTS ───────────────────────────────────────────────────────── -->
+      <section class="page" id="page-reports">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Envío Activo</div>
+            <div class="section-sub">Resultados en tiempo real de la sesión actual</div>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <select class="form-control" id="filter-status" onchange="applyFilter()"
+              style="width:160px;padding:7px 12px;font-size:13px">
+              <option value="">Todos los estados</option>
+              <option value="sent">✅ Enviados</option>
+              <option value="error">❌ Errores</option>
             </select>
-            <button class="btn btn-secondary btn-sm" id="btn-export-batch" onclick="exportBatchCSV()">⬇️ CSV</button>
+            <button class="btn btn-secondary btn-sm" onclick="exportLiveCSV()">⬇️ Exportar CSV</button>
+            <button class="btn btn-danger btn-sm" onclick="clearReports()">🗑️ Limpiar</button>
           </div>
         </div>
         <div class="stats-row" style="margin-bottom:20px">
-          <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value" id="d-total">0</div></div>
-          <div class="stat-card"><div class="stat-label">Enviados</div><div class="stat-value" style="-webkit-text-fill-color:var(--success)" id="d-sent">0</div></div>
-          <div class="stat-card"><div class="stat-label">Errores</div><div class="stat-value" style="-webkit-text-fill-color:var(--danger)" id="d-errors">0</div></div>
-          <div class="stat-card"><div class="stat-label">Modo</div><div class="stat-value" style="font-size:16px;-webkit-text-fill-color:var(--text-1)" id="d-mode">—</div></div>
+          <div class="stat-card">
+            <div class="stat-label">Total</div>
+            <div class="stat-value" id="rpt-total">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Enviados</div>
+            <div class="stat-value" style="-webkit-text-fill-color:var(--success)" id="rpt-sent">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Errores</div>
+            <div class="stat-value" style="-webkit-text-fill-color:var(--danger)" id="rpt-err">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Tasa Éxito</div>
+            <div class="stat-value" id="rpt-rate">—</div>
+          </div>
         </div>
         <div class="card" style="padding:0;overflow:hidden">
           <div style="overflow-x:auto">
-            <table class="data-table report-table">
-              <thead><tr><th>#</th><th>Número</th><th>Cuenta</th><th>Mensaje enviado</th><th>Sesión</th><th>Estado</th><th>Error / Detalle</th><th>Hora</th></tr></thead>
-              <tbody id="detail-tbody"></tbody>
+            <table class="data-table report-table" id="report-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Número</th>
+                  <th>Cuenta</th>
+                  <th>Mensaje enviado</th>
+                  <th>Sesión</th>
+                  <th>Estado</th>
+                  <th>Error / Detalle</th>
+                  <th>Hora</th>
+                </tr>
+              </thead>
+              <tbody id="report-tbody">
+                <tr>
+                  <td colspan="8" style="text-align:center;color:var(--text-3);padding:40px">Sin registros aún. Realiza
+                    un envío masivo.</td>
+                </tr>
+              </tbody>
             </table>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- ── INBOX (Bandeja de Entrada) ────────────────────────────────────────── -->
-    <section class="page" id="page-inbox">
-      <div class="section-header">
-        <div><div class="section-title">Bandeja de Entrada</div><div class="section-sub">Respuestas de usuarios en tiempo real</div></div>
-        <div style="display:flex;gap:10px">
-          <button class="btn btn-secondary btn-sm" onclick="markAllRepliesAsRead()">✔️ Marcar todo leído</button>
-          <button class="btn btn-secondary btn-sm" onclick="loadInbox()">🔄 Actualizar</button>
-        </div>
-      </div>
-      <div class="card" style="padding:0;overflow:hidden">
-        <div style="padding:15px; background:var(--surface-2, rgba(255,255,255,0.03)); border-bottom:1px solid var(--border); font-size:13px; color:var(--text-2);">
-          Mostrando <span id="inbox-count" style="font-weight:bold;color:var(--text-1)">0</span> mensajes entrantes.
-        </div>
-        <div id="inbox-messages" style="max-height:600px;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:10px">
-          <div style="text-align:center;color:var(--text-3);padding:40px">Sin mensajes entrantes.</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ── LOG ───────────────────────────────────────────────────────────────── -->
-    <section class="page" id="page-log">
-      <div class="section-header">
-        <div><div class="section-title">Registro de Actividad</div><div class="section-sub">Eventos en tiempo real</div></div>
-        <button class="btn btn-secondary btn-sm" onclick="clearLog()">🗑️ Limpiar</button>
-      </div>
-      <div class="card">
-        <div class="progress-log" id="main-log" style="max-height:600px">
-          <div class="log-entry"><span class="log-time" id="log-start-time"></span><span class="log-info">Sistema iniciado.</span></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ── TRAINING MODE (admin only) ──────────────────────────────────────────── -->
-    <section class="page" id="page-training">
-      <div class="section-header">
-        <div>
-          <div class="section-title">🏋️ Modo Entrenamiento</div>
-          <div class="section-sub">Genera historial de conversación real entre números conectados</div>
-        </div>
-        <div style="display:flex;gap:10px">
-          <button class="btn btn-secondary btn-sm" onclick="refreshTrainingStatus()">🔄 Estado</button>
-        </div>
-      </div>
-
-      <!-- Stats -->
-      <div class="stats-row" style="margin-bottom:20px">
-        <div class="stat-card"><div class="stat-label">Sesiones</div><div class="stat-value" id="tr-sessions">—</div></div>
-        <div class="stat-card"><div class="stat-label">Total mensajes</div><div class="stat-value" id="tr-total">—</div></div>
-        <div class="stat-card"><div class="stat-label" style="color:var(--success)">Enviados</div><div class="stat-value" style="-webkit-text-fill-color:var(--success)" id="tr-sent">0</div></div>
-        <div class="stat-card"><div class="stat-label" style="color:var(--danger)">Errores</div><div class="stat-value" style="-webkit-text-fill-color:var(--danger)" id="tr-errors">0</div></div>
-      </div>
-
-      <div class="bulk-layout">
-        <!-- Config panel -->
-        <div style="display:flex;flex-direction:column;gap:20px">
-          <div class="card">
-            <div class="card-title">⚙️ Configuración</div>
-
-            <div class="form-group">
-              <label class="form-label">Mensajes por número</label>
-              <div style="display:flex;gap:10px;align-items:center">
-                <div style="flex:1">
-                  <div class="form-label" style="font-size:10px;margin-bottom:4px">MÍNIMO</div>
-                  <input class="form-control" id="tr-msgs-min" type="number" value="120" min="10" max="500" />
-                </div>
-                <div style="color:var(--text-3);padding-top:18px;font-size:18px">→</div>
-                <div style="flex:1">
-                  <div class="form-label" style="font-size:10px;margin-bottom:4px">MÁXIMO</div>
-                  <input class="form-control" id="tr-msgs-max" type="number" value="180" min="10" max="500" />
-                </div>
-              </div>
-              <div class="form-hint">Se elegirá un número aleatorio en ese rango para cada sesión</div>
+      <!-- ── HISTORY ────────────────────────────────────────────────────────────── -->
+      <section class="page" id="page-history">
+        <div id="history-list-view">
+          <div class="section-header">
+            <div>
+              <div class="section-title">Historial DB</div>
+              <div class="section-sub">Todos los lotes enviados guardados en SQLite</div>
             </div>
-
-            <div class="form-group">
-              <label class="form-label">Retraso entre mensajes</label>
-              <div style="display:flex;gap:10px;align-items:center">
-                <div style="flex:1">
-                  <div class="form-label" style="font-size:10px;margin-bottom:4px">MÍNIMO (seg)</div>
-                  <input class="form-control" id="tr-delay-min" type="number" value="15" min="5" max="120" />
-                </div>
-                <div style="color:var(--text-3);padding-top:18px;font-size:18px">→</div>
-                <div style="flex:1">
-                  <div class="form-label" style="font-size:10px;margin-bottom:4px">MÁXIMO (seg)</div>
-                  <input class="form-control" id="tr-delay-max" type="number" value="20" min="5" max="120" />
-                </div>
-              </div>
-              <div class="form-hint" id="tr-delay-hint">Cada mensaje espera entre <b>15s</b> y <b>20s</b> al azar 🎲</div>
+            <button class="btn btn-secondary btn-sm" onclick="loadHistory()">🔄 Actualizar</button>
+          </div>
+          <div class="stats-row" style="margin-bottom:24px">
+            <div class="stat-card">
+              <div class="stat-label">Total Mensajes</div>
+              <div class="stat-value" id="hs-total">—</div>
             </div>
-
-            <!-- Session selector -->
-            <div class="form-group">
-              <label class="form-label">Sesiones participantes</label>
-              <div id="tr-session-list" style="display:flex;flex-direction:column;gap:8px;max-height:200px;overflow-y:auto;padding:4px 0">
-                <div style="color:var(--text-3);font-size:13px">Cargando sesiones conectadas…</div>
-              </div>
-              <div class="form-hint">Solo las sesiones marcadas participarán en el entrenamiento</div>
+            <div class="stat-card">
+              <div class="stat-label">Enviados</div>
+              <div class="stat-value" style="-webkit-text-fill-color:var(--success)" id="hs-sent">—</div>
             </div>
-
-            <!-- ETA -->
-            <div id="tr-eta-box" style="display:none;margin-bottom:14px;padding:10px 14px;background:var(--surface-2,rgba(99,102,241,.08));border-radius:8px;font-size:13px">
-              <span style="color:var(--text-2)">⏱️ Tiempo estimado:</span> <span id="tr-eta" style="font-weight:600;color:var(--accent)">—</span>
+            <div class="stat-card">
+              <div class="stat-label">Errores</div>
+              <div class="stat-value" style="-webkit-text-fill-color:var(--danger)" id="hs-errors">—</div>
             </div>
-
-            <!-- Progress -->
-            <div id="tr-progress-section" style="display:none;margin-bottom:16px">
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px">
-                <span style="color:var(--text-2)">Progreso</span>
-                <span id="tr-progress-text" style="color:var(--accent)">0 / 0</span>
-              </div>
-              <div class="progress-bar-wrapper">
-                <div class="progress-bar-fill" id="tr-progress-bar" style="transition:width .4s ease"></div>
-              </div>
-              <div id="tr-current-msg" style="margin-top:8px;font-size:12px;color:var(--text-3);min-height:18px"></div>
+            <div class="stat-card">
+              <div class="stat-label">Lotes</div>
+              <div class="stat-value" id="hs-batches">—</div>
             </div>
+          </div>
+          <div id="no-db-warn" class="warn-box" style="display:none">
+            ⚠️ La base de datos SQLite no está disponible.
+          </div>
+          <div id="history-empty" class="empty-state" style="display:none">
+            <div class="emoji">🗄️</div>
+            <h3>Sin historial</h3>
+            <p>Los envíos masivos aparecerán aquí.</p>
+          </div>
+          <div class="history-grid" id="history-grid"></div>
+        </div>
 
-            <!-- Buttons -->
+        <div id="history-detail-view" style="display:none">
+          <div class="section-header">
+            <div>
+              <button class="btn btn-secondary btn-sm" onclick="closeHistoryDetail()" style="margin-bottom:10px">←
+                Volver al historial</button>
+              <div class="section-title" id="detail-title">Detalle del lote</div>
+              <div class="section-sub" id="detail-sub">—</div>
+            </div>
             <div style="display:flex;gap:10px">
-              <button class="btn btn-primary" id="btn-training-start" onclick="startTraining()" style="flex:1">▶️ Iniciar Entrenamiento</button>
-              <button class="btn btn-danger" id="btn-training-stop" onclick="stopTraining()" style="flex:1;display:none">⏹ Detener</button>
+              <select class="form-control" id="detail-filter" onchange="filterDetail()"
+                style="width:160px;padding:7px 12px;font-size:13px">
+                <option value="">Todos</option>
+                <option value="sent">✅ Enviados</option>
+                <option value="error">❌ Errores</option>
+              </select>
+              <button class="btn btn-secondary btn-sm" id="btn-export-batch" onclick="exportBatchCSV()">⬇️ CSV</button>
+            </div>
+          </div>
+          <div class="stats-row" style="margin-bottom:20px">
+            <div class="stat-card">
+              <div class="stat-label">Total</div>
+              <div class="stat-value" id="d-total">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Enviados</div>
+              <div class="stat-value" style="-webkit-text-fill-color:var(--success)" id="d-sent">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Errores</div>
+              <div class="stat-value" style="-webkit-text-fill-color:var(--danger)" id="d-errors">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Modo</div>
+              <div class="stat-value" style="font-size:16px;-webkit-text-fill-color:var(--text-1)" id="d-mode">—</div>
+            </div>
+          </div>
+          <div class="card" style="padding:0;overflow:hidden">
+            <div style="overflow-x:auto">
+              <table class="data-table report-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Número</th>
+                    <th>Cuenta</th>
+                    <th>Mensaje enviado</th>
+                    <th>Sesión</th>
+                    <th>Estado</th>
+                    <th>Error / Detalle</th>
+                    <th>Hora</th>
+                  </tr>
+                </thead>
+                <tbody id="detail-tbody"></tbody>
+              </table>
             </div>
           </div>
         </div>
+      </section>
 
-        <!-- Training log -->
-        <div class="card" style="overflow:hidden;padding:0">
-          <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
-            <span class="card-title" style="margin-bottom:0">📡 Flujo de Mensajes</span>
-            <button class="btn btn-secondary btn-sm" onclick="clearTrainingLog()">🗑️ Limpiar</button>
+      <!-- ── INBOX (Bandeja de Entrada) ────────────────────────────────────────── -->
+      <section class="page" id="page-inbox">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Bandeja de Entrada</div>
+            <div class="section-sub">Respuestas de usuarios en tiempo real</div>
           </div>
-          <div class="progress-log" id="training-log" style="max-height:580px;min-height:200px">
-            <div class="log-entry"><span class="log-info">El log de entrenamiento aparecerá aquí al iniciar.</span></div>
+          <div style="display:flex;gap:10px">
+            <button class="btn btn-secondary btn-sm" onclick="markAllRepliesAsRead()">✔️ Marcar todo leído</button>
+            <button class="btn btn-secondary btn-sm" onclick="loadInbox()">🔄 Actualizar</button>
+          </div>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <div
+            style="padding:15px; background:var(--surface-2, rgba(255,255,255,0.03)); border-bottom:1px solid var(--border); font-size:13px; color:var(--text-2);">
+            Mostrando <span id="inbox-count" style="font-weight:bold;color:var(--text-1)">0</span> mensajes entrantes.
+          </div>
+          <div id="inbox-messages"
+            style="max-height:600px;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:10px">
+            <div style="text-align:center;color:var(--text-3);padding:40px">Sin mensajes entrantes.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── LOG ───────────────────────────────────────────────────────────────── -->
+      <section class="page" id="page-log">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Registro de Actividad</div>
+            <div class="section-sub">Eventos en tiempo real</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="clearLog()">🗑️ Limpiar</button>
+        </div>
+        <div class="card">
+          <div class="progress-log" id="main-log" style="max-height:600px">
+            <div class="log-entry"><span class="log-time" id="log-start-time"></span><span class="log-info">Sistema
+                iniciado.</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── PROXY POOL (superadmin only) ────────────────────────────────────────── -->
+      <section class="page" id="page-proxies">
+        <div class="section-header">
+          <div>
+            <div class="section-title">🌐 Pool de Proxies</div>
+            <div class="section-sub">Gestiona la lista de proxies para asignación automática</div>
+          </div>
+          <button class="btn btn-danger btn-sm" onclick="clearProxyPool()">🗑️ Vaciar Pool</button>
+        </div>
+
+        <div class="stats-row" style="margin-bottom:20px">
+          <div class="stat-card">
+            <div class="stat-label">Disponibles</div>
+            <div class="stat-value" id="proxy-available">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">En Uso</div>
+            <div class="stat-value" style="-webkit-text-fill-color:var(--warning)" id="proxy-used">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Total</div>
+            <div class="stat-value" id="proxy-total">0</div>
+          </div>
+        </div>
+
+        <div class="bulk-layout">
+          <div style="display:flex;flex-direction:column;gap:20px">
+            <div class="card">
+              <div class="card-title">📥 Carga Masiva</div>
+              <div class="form-group">
+                <label class="form-label">Lista de Proxies (uno por línea)</label>
+                <textarea class="form-control" id="proxy-bulk-input" style="min-height:200px" 
+                  placeholder="http://user:pass@ip:port&#10;o&#10;ip:port:user:pass"></textarea>
+                <div class="form-hint">El sistema detectará automáticamente el formato y los añadirá al pool de asignación automática.</div>
+              </div>
+              <button class="btn btn-primary" style="width:100%" onclick="saveBulkProxies()">🚀 Cargar al Pool</button>
+            </div>
+          </div>
+
+          <div class="card" style="padding:0;overflow:hidden">
+            <div style="padding:16px 20px; border-bottom:1px solid var(--border); font-weight:700">📋 Proxies en el Sistema</div>
+            <div style="max-height:500px; overflow-y:auto">
+              <table class="data-table">
+                <thead>
+                  <tr><th>#</th><th>URL / Proxy</th><th>Estado</th></tr>
+                </thead>
+                <tbody id="proxy-tbody">
+                  <tr><td colspan="3" style="text-align:center;color:var(--text-3);padding:40px">Cargando pool de proxies…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── TRAINING MODE (admin only) ──────────────────────────────────────────── -->
+      <section class="page" id="page-training">
+        <div class="section-header">
+          <div>
+            <div class="section-title">🏋️ Modo Entrenamiento</div>
+            <div class="section-sub">Genera historial de conversación real entre números conectados</div>
+          </div>
+          <div style="display:flex;gap:10px">
+            <button class="btn btn-secondary btn-sm" onclick="refreshTrainingStatus()">🔄 Estado</button>
+          </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-row" style="margin-bottom:20px">
+          <div class="stat-card">
+            <div class="stat-label">Sesiones</div>
+            <div class="stat-value" id="tr-sessions">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Total mensajes</div>
+            <div class="stat-value" id="tr-total">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label" style="color:var(--success)">Enviados</div>
+            <div class="stat-value" style="-webkit-text-fill-color:var(--success)" id="tr-sent">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label" style="color:var(--danger)">Errores</div>
+            <div class="stat-value" style="-webkit-text-fill-color:var(--danger)" id="tr-errors">0</div>
+          </div>
+        </div>
+
+        <div class="bulk-layout">
+          <!-- Config panel -->
+          <div style="display:flex;flex-direction:column;gap:20px">
+            <div class="card">
+              <div class="card-title">⚙️ Configuración</div>
+
+              <div class="form-group">
+                <label class="form-label">Mensajes por número</label>
+                <div style="display:flex;gap:10px;align-items:center">
+                  <div style="flex:1">
+                    <div class="form-label" style="font-size:10px;margin-bottom:4px">MÍNIMO</div>
+                    <input class="form-control" id="tr-msgs-min" type="number" value="120" min="10" max="500" />
+                  </div>
+                  <div style="color:var(--text-3);padding-top:18px;font-size:18px">→</div>
+                  <div style="flex:1">
+                    <div class="form-label" style="font-size:10px;margin-bottom:4px">MÁXIMO</div>
+                    <input class="form-control" id="tr-msgs-max" type="number" value="180" min="10" max="500" />
+                  </div>
+                </div>
+                <div class="form-hint">Se elegirá un número aleatorio en ese rango para cada sesión</div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Retraso entre mensajes</label>
+                <div style="display:flex;gap:10px;align-items:center">
+                  <div style="flex:1">
+                    <div class="form-label" style="font-size:10px;margin-bottom:4px">MÍNIMO (seg)</div>
+                    <input class="form-control" id="tr-delay-min" type="number" value="15" min="5" max="120" />
+                  </div>
+                  <div style="color:var(--text-3);padding-top:18px;font-size:18px">→</div>
+                  <div style="flex:1">
+                    <div class="form-label" style="font-size:10px;margin-bottom:4px">MÁXIMO (seg)</div>
+                    <input class="form-control" id="tr-delay-max" type="number" value="20" min="5" max="120" />
+                  </div>
+                </div>
+                <div class="form-hint" id="tr-delay-hint">Cada mensaje espera entre <b>15s</b> y <b>20s</b> al azar 🎲
+                </div>
+              </div>
+
+              <!-- Session selector -->
+              <div class="form-group">
+                <label class="form-label">Sesiones participantes</label>
+                <div id="tr-session-list"
+                  style="display:flex;flex-direction:column;gap:8px;max-height:200px;overflow-y:auto;padding:4px 0">
+                  <div style="color:var(--text-3);font-size:13px">Cargando sesiones conectadas…</div>
+                </div>
+                <div class="form-hint">Solo las sesiones marcadas participarán en el entrenamiento</div>
+              </div>
+
+              <!-- ETA -->
+              <div id="tr-eta-box"
+                style="display:none;margin-bottom:14px;padding:10px 14px;background:var(--surface-2,rgba(99,102,241,.08));border-radius:8px;font-size:13px">
+                <span style="color:var(--text-2)">⏱️ Tiempo estimado:</span> <span id="tr-eta"
+                  style="font-weight:600;color:var(--accent)">—</span>
+              </div>
+
+              <!-- Progress -->
+              <div id="tr-progress-section" style="display:none;margin-bottom:16px">
+                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px">
+                  <span style="color:var(--text-2)">Progreso</span>
+                  <span id="tr-progress-text" style="color:var(--accent)">0 / 0</span>
+                </div>
+                <div class="progress-bar-wrapper">
+                  <div class="progress-bar-fill" id="tr-progress-bar" style="transition:width .4s ease"></div>
+                </div>
+                <div id="tr-current-msg" style="margin-top:8px;font-size:12px;color:var(--text-3);min-height:18px">
+                </div>
+              </div>
+
+              <!-- Buttons -->
+              <div style="display:flex;gap:10px">
+                <button class="btn btn-primary" id="btn-training-start" onclick="startTraining()" style="flex:1">▶️
+                  Iniciar Entrenamiento</button>
+                <button class="btn btn-danger" id="btn-training-stop" onclick="stopTraining()"
+                  style="flex:1;display:none">⏹ Detener</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Training log -->
+          <div class="card" style="overflow:hidden;padding:0">
+            <div
+              style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+              <span class="card-title" style="margin-bottom:0">📡 Flujo de Mensajes</span>
+              <button class="btn btn-secondary btn-sm" onclick="clearTrainingLog()">🗑️ Limpiar</button>
+            </div>
+            <div class="progress-log" id="training-log" style="max-height:580px;min-height:200px">
+              <div class="log-entry"><span class="log-info">El log de entrenamiento aparecerá aquí al iniciar.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── USERS (admin only) ─────────────────────────────────────────────────── -->
+      <section class="page" id="page-users">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Gestión de Usuarios</div>
+            <div class="section-sub">Crea y administra accesos al sistema</div>
+          </div>
+          <button class="btn btn-primary" onclick="openAddUserModal()">＋ Nuevo Usuario</button>
+        </div>
+
+        <div class="card" style="padding:0;overflow:hidden">
+          <div style="overflow-x:auto">
+            <table class="data-table" id="users-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Usuario</th>
+                  <th>Rol</th>
+                  <th>Creado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="users-tbody">
+                <tr>
+                  <td colspan="5" style="text-align:center;color:var(--text-3);padding:40px">Cargando usuarios…</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ── ADD SESSION MODAL ──────────────────────────────────────────────────────── -->
+  <div class="modal-overlay" id="modal-add-session">
+    <div class="modal">
+      <button class="modal-close" onclick="closeModal('modal-add-session')">✕</button>
+      <div class="modal-title">➕ Nueva Sesión WhatsApp</div>
+      <div class="form-group">
+        <label class="form-label" for="new-session-id">ID de sesión</label>
+        <input class="form-control" id="new-session-id" type="text" placeholder="ej: ventas, soporte, numero-2" />
+        <div class="form-hint">Solo letras, números o guiones. Sin espacios.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="new-session-label">Etiqueta (opcional)</label>
+        <input class="form-control" id="new-session-label" type="text" placeholder="ej: Número Ventas" />
+      </div>
+      <button class="btn btn-primary" style="width:100%" onclick="createSession()">Crear sesión</button>
+    </div>
+  </div>
+
+  <!-- ── QR MODAL ───────────────────────────────────────────────────────────────── -->
+  <div class="modal-overlay" id="modal-qr">
+    <div class="modal" style="max-width:400px;text-align:center">
+      <button class="modal-close" onclick="closeModal('modal-qr')">✕</button>
+      <div class="modal-title" id="qr-modal-title">Escanear QR</div>
+      <div class="qr-container">
+        <div class="qr-spinner" id="qr-loading">
+          <div class="spinner"></div><span>Generando QR...</span>
+        </div>
+        <div id="qr-content" style="display:none">
+          <div class="qr-wrapper"><img id="qr-image" src="" alt="QR Code WhatsApp" /></div>
+          <p class="qr-instruction">Abre <b>WhatsApp</b> → <b>Menú → Dispositivos vinculados → Vincular
+              dispositivo</b><br>y escanea este código.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── ADD USER MODAL ─────────────────────────────────────────────────────────── -->
+  <div class="modal-overlay" id="modal-add-user">
+    <div class="modal">
+      <button class="modal-close" onclick="closeModal('modal-add-user')">✕</button>
+      <div class="modal-title">👤 Nuevo Usuario</div>
+      <div id="add-user-error" class="login-error" style="display:none;margin-bottom:14px"></div>
+      <div class="form-group">
+        <label class="form-label" for="new-user-username">Nombre de usuario</label>
+        <input class="form-control" id="new-user-username" type="text" placeholder="ej: agente1" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="new-user-password">Contraseña</label>
+        <input class="form-control" id="new-user-password" type="password" placeholder="Mínimo 6 caracteres" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="new-user-role">Rol</label>
+        <select class="form-control" id="new-user-role">
+          <option value="admin">Administrador local (acceso propio)</option>
+          <option value="superadmin">Superadmin (acceso total)</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" style="width:100%" onclick="createUser()">Crear usuario</button>
+    </div>
+  </div>
+
+  <!-- ── SETTINGS MODAL (IA / PROXY) ───────────────────────────────────────────── -->
+  <div class="modal-overlay" id="modal-settings">
+    <div class="modal" style="max-width:500px">
+      <button class="modal-close" onclick="closeModal('modal-settings')">✕</button>
+      <div class="modal-title">⚙️ Configuración Avanzada</div>
+      <div id="settings-subtitle" class="section-sub" style="margin-bottom:20px; font-weight:600; color:var(--accent)">
+        Sesión: —</div>
+
+      <div class="card"
+        style="margin-bottom:20px; border:1px solid rgba(99,102,241,.2); background:rgba(99,102,241,.03);">
+        <div class="card-title">🤖 Inteligencia Artificial</div>
+        <div class="form-group" style="display:flex; align-items:center; gap:10px">
+          <label style="display:flex; align-items:center; cursor:pointer; gap:8px">
+            <input type="checkbox" id="setting-ai-enabled"
+              style="accent-color:var(--accent); width:18px; height:18px" />
+            <span style="font-weight:600; color:var(--text-1)">Habilitar Auto-Reply IA</span>
+          </label>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="setting-ai-prompt">Instrucciones del Asistente (Prompt)</label>
+          <textarea class="form-control" id="setting-ai-prompt" style="min-height:80px; font-size:13px"
+            placeholder="Ej: Eres un asistente de ventas. Sé amable y responde dudas sobre el catálogo de Abril. No des precios sin que los pidan."></textarea>
+          <div class="form-hint">Define la personalidad y reglas de la IA. Solo responderá a <b>clientes nuevos</b>.
           </div>
         </div>
       </div>
-    </section>
 
-    <!-- ── USERS (admin only) ─────────────────────────────────────────────────── -->
-    <section class="page" id="page-users">
-      <div class="section-header">
-        <div><div class="section-title">Gestión de Usuarios</div><div class="section-sub">Crea y administra accesos al sistema</div></div>
-        <button class="btn btn-primary" onclick="openAddUserModal()">＋ Nuevo Usuario</button>
-      </div>
-
-      <div class="card" style="padding:0;overflow:hidden">
-        <div style="overflow-x:auto">
-          <table class="data-table" id="users-table">
-            <thead>
-              <tr><th>#</th><th>Usuario</th><th>Rol</th><th>Creado</th><th>Acciones</th></tr>
-            </thead>
-            <tbody id="users-tbody">
-              <tr><td colspan="5" style="text-align:center;color:var(--text-3);padding:40px">Cargando usuarios…</td></tr>
-            </tbody>
-          </table>
+      <div class="card" style="border:1px solid rgba(237,137,54,.2); background:rgba(237,137,54,.03);">
+        <div class="card-title">🌐 Proxy de Red</div>
+        <div class="form-group">
+          <label class="form-label" for="setting-proxy">URL del Proxy (HTTP/SOCKS5)</label>
+          <input class="form-control" id="setting-proxy" type="text" placeholder="socks5://usuario:pass@ip:puerto" />
+          <div class="form-hint">Ej: <code>http://proxy.com:8080</code> o <code>socks5://1.2.3.4:1080</code>.
+            <br><b>Requiere reiniciar la sesión (desconectar y conectar).</b></div>
         </div>
       </div>
-    </section>
 
-  </main>
-</div>
-
-<!-- ── ADD SESSION MODAL ──────────────────────────────────────────────────────── -->
-<div class="modal-overlay" id="modal-add-session">
-  <div class="modal">
-    <button class="modal-close" onclick="closeModal('modal-add-session')">✕</button>
-    <div class="modal-title">➕ Nueva Sesión WhatsApp</div>
-    <div class="form-group">
-      <label class="form-label" for="new-session-id">ID de sesión</label>
-      <input class="form-control" id="new-session-id" type="text" placeholder="ej: ventas, soporte, numero-2" />
-      <div class="form-hint">Solo letras, números o guiones. Sin espacios.</div>
-    </div>
-    <div class="form-group">
-      <label class="form-label" for="new-session-label">Etiqueta (opcional)</label>
-      <input class="form-control" id="new-session-label" type="text" placeholder="ej: Número Ventas" />
-    </div>
-    <button class="btn btn-primary" style="width:100%" onclick="createSession()">Crear sesión</button>
-  </div>
-</div>
-
-<!-- ── QR MODAL ───────────────────────────────────────────────────────────────── -->
-<div class="modal-overlay" id="modal-qr">
-  <div class="modal" style="max-width:400px;text-align:center">
-    <button class="modal-close" onclick="closeModal('modal-qr')">✕</button>
-    <div class="modal-title" id="qr-modal-title">Escanear QR</div>
-    <div class="qr-container">
-      <div class="qr-spinner" id="qr-loading"><div class="spinner"></div><span>Generando QR...</span></div>
-      <div id="qr-content" style="display:none">
-        <div class="qr-wrapper"><img id="qr-image" src="" alt="QR Code WhatsApp" /></div>
-        <p class="qr-instruction">Abre <b>WhatsApp</b> → <b>Menú → Dispositivos vinculados → Vincular dispositivo</b><br>y escanea este código.</p>
+      <div style="margin-top:24px; display:flex; gap:10px">
+        <button class="btn btn-secondary" style="flex:1" onclick="closeModal('modal-settings')">Cancelar</button>
+        <button class="btn btn-primary" style="flex:1" id="btn-save-settings" onclick="saveSessionSettings()">Guardar
+          cambios</button>
       </div>
     </div>
   </div>
-</div>
 
-<!-- ── ADD USER MODAL ─────────────────────────────────────────────────────────── -->
-<div class="modal-overlay" id="modal-add-user">
-  <div class="modal">
-    <button class="modal-close" onclick="closeModal('modal-add-user')">✕</button>
-    <div class="modal-title">👤 Nuevo Usuario</div>
-    <div id="add-user-error" class="login-error" style="display:none;margin-bottom:14px"></div>
-    <div class="form-group">
-      <label class="form-label" for="new-user-username">Nombre de usuario</label>
-      <input class="form-control" id="new-user-username" type="text" placeholder="ej: agente1" />
-    </div>
-    <div class="form-group">
-      <label class="form-label" for="new-user-password">Contraseña</label>
-      <input class="form-control" id="new-user-password" type="password" placeholder="Mínimo 6 caracteres" />
-    </div>
-    <div class="form-group">
-      <label class="form-label" for="new-user-role">Rol</label>
-      <select class="form-control" id="new-user-role">
-        <option value="user">Usuario (acceso propio)</option>
-        <option value="superadmin">Superadmin (acceso total)</option>
-      </select>
-    </div>
-    <button class="btn btn-primary" style="width:100%" onclick="createUser()">Crear usuario</button>
-  </div>
-</div>
-
-<div class="toast-container" id="toast-container"></div>
-<script src="/socket.io/socket.io.js"></script>
-<script src="app.js"></script>
+  <div class="toast-container" id="toast-container"></div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
 </body>
+
 </html>

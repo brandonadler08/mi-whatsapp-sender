@@ -1,0 +1,31 @@
+✅ SQLite DB loaded from C:\Users\DELL\.gemini\antigravity\scratch\whatsapp-sender\backend\data\whatsapp_sender.db
+✅ SQLite database ready at ./data/whatsapp_sender.db
+
+🚀 WhatsApp Sender v3 → http://localhost:3005
+
+✅ SQLite DB loaded from C:\Users\DELL\.gemini\antigravity\scratch\whatsapp-sender\backend\data\whatsapp_sender.db
+✅ SQLite database ready at ./data/whatsapp_sender.db
+
+🚀 WhatsApp Sender v3 → http://localhost:3005
+
+^C✅ SQLite DB loaded from C:\Users\DELL\.gemini\antigravity\scratch\whatsapp-sender\backend\data\whatsapp_sender.db
+✅ SQLite database ready at ./data/whatsapp_sender.db
+
+🚀 WhatsApp Sender v3 → http://localhost:3005
+
+[2:27:46 p.m.] GET /
+[2:27:46 p.m.] GET /style.css
+[2:27:46 p.m.] GET /app.js
+[2:27:47 p.m.] GET /favicon.ico
+[2:28:05 p.m.] GET /api/replies
+[2:28:07 p.m.] GET /api/history
+[2:28:07 p.m.] GET /api/history/stats
+[2:28:08 p.m.] GET /api/history
+[2:28:08 p.m.] GET /api/history/stats
+[2:28:09 p.m.] GET /api/users
+[2:28:35 p.m.] POST /api/sessions
+[AD2] QR code generated (Baileys)
+[2:28:40 p.m.] DELETE /api/sessions/AD2
+[AD2] Logged out. Auth failure.
+[AD2] Session removed
+^C
