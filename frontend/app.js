@@ -1326,25 +1326,27 @@ function renderTrainingSessions() {
 
   // Update sessions stat card
   const statEl = document.getElementById('tr-sessions');
-  if (statEl) statEl.textContent = ready.length > 0 ? `${ready.length} listas` : '—';
+  if (statEl) {
+    statEl.textContent = ready.length > 0 ? `${ready.length} conectorres` : '—';
+    statEl.style.color = ready.length > 0 ? 'var(--accent)' : 'var(--text-3)';
+  }
 
   container.innerHTML = '';
 
   if (all.length === 0) {
-    container.innerHTML = '<div style="color:var(--text-3);font-size:13px;padding:8px">No hay sesiones agregadas al sistema.</div>';
+    container.innerHTML = '<div style="color:var(--text-3);font-size:13px;padding:8px">No hay sesiones en el sistema.</div>';
     return;
   }
 
   const statusLabel = {
-    ready: { text: '✅ Lista', color: 'var(--success)', bg: 'rgba(16,185,129,.15)' },
-    initializing: { text: '⚙️ Iniciando', color: 'var(--warning,#f59e0b)', bg: 'rgba(245,158,11,.15)' },
-    qr_pending: { text: '📷 QR pendiente', color: 'var(--warning,#f59e0b)', bg: 'rgba(245,158,11,.15)' },
-    authenticated: { text: '🔐 Autenticada', color: 'var(--accent)', bg: 'rgba(99,102,241,.15)' },
-    disconnected: { text: '❌ Desconectada', color: 'var(--danger)', bg: 'rgba(239,68,68,.15)' },
-    auth_failure: { text: '🚫 Error auth', color: 'var(--danger)', bg: 'rgba(239,68,68,.15)' },
+    ready: { text: '✅ Conectado', color: 'var(--success)', bg: 'rgba(16,185,129,.12)' },
+    initializing: { text: '⚙️ Iniciando', color: 'var(--warning)', bg: 'rgba(245,158,11,.1)' },
+    qr_pending: { text: '📷 QR Pendiente', color: 'var(--warning)', bg: 'rgba(245,158,11,.1)' },
+    authenticated: { text: '🔐 Autenticado', color: 'var(--accent)', bg: 'rgba(99,102,241,.1)' },
+    disconnected: { text: '❌ Desconectado', color: 'var(--danger)', bg: 'rgba(239,68,68,.1)' },
+    auth_failure: { text: '🚫 Error Auth', color: 'var(--danger)', bg: 'rgba(239,68,68,.1)' },
   };
 
-  // Sort: ready first, then others
   const sorted = [...all].sort((a, b) => {
     if (a.status === 'ready' && b.status !== 'ready') return -1;
     if (a.status !== 'ready' && b.status === 'ready') return 1;
@@ -1354,28 +1356,30 @@ function renderTrainingSessions() {
   sorted.forEach(s => {
     const isReady = s.status === 'ready';
     const sl = statusLabel[s.status] || { text: s.status, color: 'var(--text-3)', bg: 'rgba(255,255,255,.05)' };
-    const row = document.createElement('label');
-    row.style.cssText = `display:flex;align-items:center;gap:10px;padding:8px 12px;
-      background:var(--surface-2,rgba(255,255,255,.04));border-radius:8px;
-      cursor:${isReady ? 'pointer' : 'not-allowed'};font-size:13px;
-      opacity:${isReady ? '1' : '0.55'};border:1px solid ${isReady ? 'rgba(99,102,241,.2)' : 'transparent'};
-      transition:opacity .2s`;
-    row.innerHTML = `
-      <input type="checkbox" value="${esc(s.clientId)}"
+    
+    const div = document.createElement('div');
+    div.style.cssText = `display:flex;align-items:center;gap:12px;padding:10px 14px;
+      background:var(--surface-2);border-radius:10px;
+      border:1px solid ${isReady ? 'rgba(99,102,241,.2)' : 'rgba(255,255,255,.05)'};
+      opacity:${isReady ? '1' : '0.6'};margin-bottom:4px`;
+
+    div.innerHTML = `
+      <input type="checkbox" value="${esc(s.clientId)}" id="chk-${esc(s.clientId)}"
         ${isReady ? 'checked' : 'disabled'}
-        style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;cursor:${isReady ? 'pointer' : 'not-allowed'}" />
-      <span style="flex:1;min-width:0">
-        <b style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.name || s.clientId)}</b>
-        ${s.phone ? `<span style="color:var(--text-3);font-size:11px">+52${esc(s.phone)}</span>` : `<span style="color:var(--text-3);font-size:11px">${esc(s.clientId)}</span>`}
-      </span>
-      <span style="font-size:11px;padding:2px 8px;background:${sl.bg};color:${sl.color};border-radius:20px;white-space:nowrap;flex-shrink:0">${sl.text}</span>`;
-    container.appendChild(row);
+        style="width:18px;height:18px;accent-color:var(--accent);cursor:${isReady ? 'pointer' : 'default'}" />
+      <label for="chk-${esc(s.clientId)}" style="flex:1;cursor:${isReady ? 'pointer' : 'default'};min-width:0">
+        <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-1)">${esc(s.name || s.clientId)}</div>
+        <div style="color:var(--text-3);font-size:11px">${s.phone ? '+52' + esc(s.phone) : esc(s.clientId)}</div>
+      </label>
+      <span style="font-size:10px;font-weight:600;padding:3px 10px;background:${sl.bg};color:${sl.color};border-radius:6px;text-transform:uppercase">${sl.text}</span>
+    `;
+    container.appendChild(div);
   });
 
   if (ready.length === 0) {
     const warn = document.createElement('div');
-    warn.style.cssText = 'color:var(--warning,#f59e0b);font-size:12px;padding:8px 4px';
-    warn.textContent = '⚠️ Ninguna sesión está lista. Conéctalas desde la página Sesiones.';
+    warn.style.cssText = 'color:var(--warning);font-size:12px;margin-top:8px;padding:0 4px';
+    warn.innerHTML = '⚠️ Conecta tus números para poder iniciar el entrenamiento.';
     container.appendChild(warn);
   }
 }
