@@ -458,6 +458,7 @@ function navigate(page) {
   if (page === 'users') loadUsers();
   if (page === 'inbox') loadInbox();
   if (page === 'proxies') loadProxyStats();
+  if (page === 'training') renderTrainingSessions();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -467,6 +468,7 @@ function updateSession(clientId, updates) {
   if (!state.sessions[clientId]) state.sessions[clientId] = { clientId };
   Object.assign(state.sessions[clientId], updates);
   renderSessions();
+  renderTrainingSessions();
 }
 
 function renderSessions() {
