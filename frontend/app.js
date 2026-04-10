@@ -458,7 +458,23 @@ function navigate(page) {
   if (page === 'users') loadUsers();
   if (page === 'inbox') loadInbox();
   if (page === 'proxies') loadProxyStats();
-  if (page === 'training') renderTrainingSessions();
+  if (page === 'training') loadTrainingSessions();
+}
+
+async function loadTrainingSessions() {
+  // Refresca sesiones desde el servidor para garantizar datos actualizados
+  try {
+    const res = await apiFetch('/api/sessions');
+    if (res.ok) {
+      const data = await res.json();
+      // Actualizar state.sessions con la lista del servidor (preserva el QR local)
+      (data.sessions || []).forEach(s => {
+        if (!state.sessions[s.clientId]) state.sessions[s.clientId] = {};
+        Object.assign(state.sessions[s.clientId], s);
+      });
+    }
+  } catch (e) { /* no bloquear si falla, usar estado local */ }
+  renderTrainingSessions();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1327,14 +1343,14 @@ function renderTrainingSessions() {
   // Update sessions stat card
   const statEl = document.getElementById('tr-sessions');
   if (statEl) {
-    statEl.textContent = ready.length > 0 ? `${ready.length} conectorres` : '—';
+    statEl.textContent = ready.length > 0 ? `${ready.length} conectores` : (all.length > 0 ? `0 / ${all.length}` : '—');
     statEl.style.color = ready.length > 0 ? 'var(--accent)' : 'var(--text-3)';
   }
 
   container.innerHTML = '';
 
   if (all.length === 0) {
-    container.innerHTML = '<div style="color:var(--text-3);font-size:13px;padding:8px">No hay sesiones en el sistema.</div>';
+    container.innerHTML = '<div style="color:var(--text-3);font-size:13px;padding:8px">No hay sesiones en el sistema. <br>Crea una en la sección <b>Sesiones</b> y escanea el QR.</div>';
     return;
   }
 

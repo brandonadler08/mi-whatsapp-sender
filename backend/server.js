@@ -478,8 +478,19 @@ app.post('/api/send', auth.requireAuth, async (req, res) => {
     }
   }
 
+  // Resolver imagen si se adjuntó
+  let imageBuffer = null;
+  let imageMimetype = null;
+  if (imageKey) {
+    const img = imageStore.get(imageKey);
+    if (img) {
+      imageBuffer = img.buffer;
+      imageMimetype = img.mimetype;
+    }
+  }
+
   try {
-    const result = await sessionManager.sendMessage(clientId, to, message);
+    const result = await sessionManager.sendMessage(clientId, to, message, imageBuffer, imageMimetype);
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -562,7 +573,7 @@ app.post('/api/parse-xlsx', auth.requireAuth, prohibitAsesor, upload.single('fil
 // REST API — Bulk send  [PROTECTED]
 // ═══════════════════════════════════════════════════════════════════════════════
 app.post('/api/send-bulk-xlsx', auth.requireAuth, prohibitAsesor, async (req, res) => {
-  const { rows, clientId, minDelay, maxDelay, template, batchName, warmup } = req.body;
+  const { rows, clientId, minDelay, maxDelay, template, batchName, warmup, imageKey } = req.body;
   const { user } = req;
 
   if (!rows || !Array.isArray(rows) || rows.length === 0)
@@ -608,6 +619,18 @@ app.post('/api/send-bulk-xlsx', auth.requireAuth, prohibitAsesor, async (req, re
   }
 
   res.json({ success: true, batchId, total: rows.length });
+
+  // Resolver imagen del imageStore ANTES del loop asíncrono
+  let bulkImageBuffer = null;
+  let bulkImageMimetype = null;
+  if (imageKey) {
+    const img = imageStore.get(imageKey);
+    if (img) {
+      bulkImageBuffer = img.buffer;
+      bulkImageMimetype = img.mimetype;
+      console.log(`[Bulk ${batchId}] Usando imagen adjunta: ${img.name}`);
+    }
+  }
 
   // ── Async bulk send ───────────────────────────────────────────────────────
   (async () => {
@@ -695,13 +718,15 @@ app.post('/api/send-bulk-xlsx', auth.requireAuth, prohibitAsesor, async (req, re
           }, 7 * 60 * 1000);
 
           pendingPayloads.set(numero, {
-            batchId, sessionClientId: session.clientId, mensajeFinal, entry, timerId: tId
+            batchId, sessionClientId: session.clientId, mensajeFinal, entry, timerId: tId,
+            imageBuffer: bulkImageBuffer, imageMimetype: bulkImageMimetype
           });
         } else {
           // Si apagó "warmup", enviamos el mensaje principal directamente
           const tId = setTimeout(() => executePayload(numero, false), 500);
           pendingPayloads.set(numero, {
-            batchId, sessionClientId: session.clientId, mensajeFinal, entry, timerId: tId
+            batchId, sessionClientId: session.clientId, mensajeFinal, entry, timerId: tId,
+            imageBuffer: bulkImageBuffer, imageMimetype: bulkImageMimetype
           });
         }
 
