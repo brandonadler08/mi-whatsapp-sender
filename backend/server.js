@@ -44,6 +44,10 @@ async function initDb() {
 const SessionManager = require('./sessionManager');
 
 const app = express();
+
+// ── Trust proxy para Railway/Heroku/servidores en la nube ──────────────────────────
+app.set('trust proxy', 1);
+
 const httpServer = http.createServer(app);
 const io = new Server(httpServer, {
   cors: { origin: '*', methods: ['GET', 'POST', 'DELETE'] }
@@ -597,7 +601,7 @@ app.post('/api/send-bulk-xlsx', auth.requireAuth, prohibitAsesor, async (req, re
     dbModule.stmts.insertBatch({
       id: batchId, name, total: rows.length,
       session_mode: useRotation ? 'ALL' : clientId,
-      delay_ms: dMin, template,
+      delay_ms: dMin, template: String(template || '').slice(0, 5000),
       owner_id: user.id,
       created_at: batchCreated
     });

@@ -435,6 +435,23 @@ const stmts = {
 
   getProxies() {
     return all(`SELECT * FROM proxy_pool ORDER BY is_used ASC, id DESC`);
+  },
+
+  // ── Stats globales ─────────────────────────────────────────────────────────
+  getTotalStats(ownerId = null) {
+    if (ownerId) {
+      const msgs   = get(`SELECT COUNT(*) as total, SUM(CASE WHEN status='sent' THEN 1 ELSE 0 END) as sent, SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) as errors FROM messages m JOIN batches b ON m.batch_id = b.id WHERE b.owner_id = :owner`, { ':owner': ownerId });
+      const batches = get(`SELECT COUNT(*) as cnt FROM batches WHERE owner_id = :owner`, { ':owner': ownerId });
+      return { total: msgs?.total || 0, sent: msgs?.sent || 0, errors: msgs?.errors || 0, batches: batches?.cnt || 0 };
+    }
+    const msgs   = get(`SELECT COUNT(*) as total, SUM(CASE WHEN status='sent' THEN 1 ELSE 0 END) as sent, SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) as errors FROM messages`);
+    const batches = get(`SELECT COUNT(*) as cnt FROM batches`);
+    return { total: msgs?.total || 0, sent: msgs?.sent || 0, errors: msgs?.errors || 0, batches: batches?.cnt || 0 };
+  },
+
+  // ── Sessions por dueño ─────────────────────────────────────────────────────
+  getSessionsByOwner(ownerId) {
+    return all(`SELECT * FROM sessions WHERE owner_id = :owner`, { ':owner': ownerId });
   }
 };
 
