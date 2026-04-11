@@ -1022,13 +1022,17 @@
             <div class="card">
               <div class="card-title">⚙️ Configuración</div>
               <div class="form-group">
-                <label class="form-label" for="val-session">Sesión a usar para validar</label>
-                <select class="form-control" id="val-session">
-                  <option value="">— Selecciona una sesión conectada —</option>
-                </select>
-                <div class="form-hint">Se usará esta sesión para consultar WhatsApp. No se envía ningún mensaje.</div>
+                <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(99,179,237,.08);border:1px solid rgba(99,179,237,.2);border-radius:10px">
+                  <span style="font-size:20px">🔄</span>
+                  <div>
+                    <div style="font-size:13px;font-weight:600;color:var(--text-1)">Rotación automática de sesiones</div>
+                    <div id="val-sessions-info" style="font-size:11px;color:var(--text-3);margin-top:2px">Usa todas las sesiones conectadas disponibles</div>
+                  </div>
+                </div>
+                <div class="form-hint" style="margin-top:8px">No se envía ningún mensaje. Solo se consulta si el número está en WhatsApp.</div>
               </div>
             </div>
+
 
             <div class="card">
               <div class="card-title">📋 Números a validar</div>

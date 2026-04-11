@@ -51,24 +51,27 @@ async function refreshInboxSessions() {
 function renderInboxSessions(sessions) {
   const list = document.getElementById('inbox-session-list');
   if (!list) return;
-  if (!sessions.length) {
+  // Filtrar sesiones inválidas o sin clientId
+  const valid = (sessions || []).filter(s => s && s.clientId);
+  if (!valid.length) {
     list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">Sin sesiones conectadas</div>';
     return;
   }
-  list.innerHTML = sessions.map(s => {
+  list.innerHTML = valid.map(s => {
     const active = s.clientId === inboxCRM.activeSession ? 'active' : '';
-    const letter = (s.name || s.clientId || '?')[0].toUpperCase();
+    const label = String(s.name || s.clientId || '?');
+    const letter = label.charAt(0).toUpperCase();
     const offlineCls = s.status !== 'ready' ? 'offline' : '';
     const statusDot = s.status === 'ready'
       ? '<span style="color:#22c55e;font-size:10px">● En línea</span>'
       : '<span style="color:var(--text-3);font-size:10px">○ Desconectada</span>';
-    const badge = s.unread > 0
+    const badge = (s.unread > 0)
       ? `<span class="inbox-unread-badge">${s.unread}</span>` : '';
     return `
       <div class="inbox-session-item ${active}" onclick="selectInboxSession('${esc(s.clientId)}', this)" data-cid="${esc(s.clientId)}">
         <div class="inbox-session-avatar ${offlineCls}">${esc(letter)}</div>
         <div style="flex:1;min-width:0">
-          <div class="inbox-session-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.name || s.clientId)}</div>
+          <div class="inbox-session-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(label)}</div>
           ${statusDot}
         </div>
         ${badge}
@@ -78,8 +81,15 @@ function renderInboxSessions(sessions) {
 
 // ── Seleccionar sesión (Columna 1→2) ─────────────────────────────────────────
 async function selectInboxSession(clientId, el) {
+  if (!clientId) return;
   inboxCRM.activeSession = clientId;
   inboxCRM.activeContact = null;
+  inboxCRM.tagFilter = '';
+  inboxCRM.searchQ = '';
+
+  // Limpiar búsqueda
+  const searchEl = document.getElementById('inbox-search');
+  if (searchEl) searchEl.value = '';
 
   // Actualizar estado activo en col1
   document.querySelectorAll('#inbox-session-list .inbox-session-item').forEach(e => e.classList.remove('active'));
@@ -89,10 +99,10 @@ async function selectInboxSession(clientId, el) {
   document.getElementById('inbox-chat-empty').style.display = 'flex';
   document.getElementById('inbox-chat-view').style.display = 'none';
 
-  // Header col2
-  const sess = (await apiFetch('/api/inbox/sessions').then(r => r.json()).catch(() => ({ sessions: [] }))).sessions?.find(s => s.clientId === clientId);
+  // Header col2 — usar datos del state.sessions local (evitar doble fetch)
+  const localSess = state.sessions[clientId];
   const hdr = document.getElementById('inbox-contacts-header');
-  if (hdr) hdr.textContent = sess ? `📱 ${sess.name || clientId}` : `📱 ${clientId}`;
+  if (hdr) hdr.textContent = localSess ? `📱 ${localSess.name || clientId}` : `📱 ${clientId}`;
 
   await loadInboxContacts();
 }
@@ -135,8 +145,9 @@ function renderInboxContacts() {
 
   list.innerHTML = contacts.map(c => {
     const active = c.from_number === inboxCRM.activeContact ? 'active' : '';
-    const name = c.cuenta || c.from_number || '—';
-    const letter = name[0].toUpperCase();
+    const name = String(c.cuenta || c.from_number || '—');
+    const letter = name.charAt(0).toUpperCase();
+
     const preview = c.last_message ? esc(String(c.last_message).slice(0, 55)) : '—';
     const ts = c.last_time ? relativeTime(c.last_time) : '';
     const unreadBadge = c.unread_count > 0
@@ -175,11 +186,13 @@ async function openInboxConversation(fromNumber, name, tag, el) {
   chatView.style.display = 'flex';
 
   // Header
-  const letter = name[0].toUpperCase();
+  const safeName = String(name || fromNumber || '?');
+  const letter = safeName.charAt(0).toUpperCase();
   document.getElementById('inbox-avatar').textContent = letter;
-  document.getElementById('inbox-chat-name').textContent = name;
+  document.getElementById('inbox-chat-name').textContent = safeName;
   document.getElementById('inbox-chat-phone').textContent = fromNumber;
   document.getElementById('inbox-reply-session-label').textContent = `Línea: ${inboxCRM.activeSession}`;
+
 
   // Etiqueta actual
   const tagSel = document.getElementById('inbox-tag-select');
@@ -949,7 +962,8 @@ async function saveSessionSettings() {
 function populateSessionSelects() {
   const ready = Object.values(state.sessions).filter(s => s.status === 'ready');
   ['send-session'].forEach(id => {
-    const sel = document.getElementById(id); const v = sel.value;
+    const sel = document.getElementById(id); if (!sel) return;
+    const v = sel.value;
     sel.innerHTML = '<option value="">— Selecciona sesión —</option>';
     ready.forEach(s => { const o = document.createElement('option'); o.value = s.clientId; o.textContent = `${s.name || s.clientId}${s.phone ? ` (+52${s.phone})` : ''}`; sel.appendChild(o); });
     if (v) sel.value = v;
@@ -959,11 +973,154 @@ function populateSessionSelects() {
   ready.forEach(s => { const o = document.createElement('option'); o.value = s.clientId; o.textContent = `${s.name || s.clientId}${s.phone ? ` (+52${s.phone})` : ''}`; bs.appendChild(o); });
   if (bv) bs.value = bv;
   checkBulkReady();
+
+  // Actualizar badge informativo del validador
+  const info = document.getElementById('val-sessions-info');
+  if (info) {
+    if (ready.length === 0) {
+      info.textContent = '⚠️ Sin sesiones conectadas — conecta al menos una';
+      info.style.color = 'var(--danger)';
+    } else {
+      info.textContent = `${ready.length} sesión${ready.length > 1 ? 'es' : ''} disponible${ready.length > 1 ? 's' : ''}: ${ready.map(s => s.name || s.clientId).join(', ')}`;
+      info.style.color = 'var(--text-3)';
+    }
+  }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ── Helper: obtener primera sesión ready ───────────────────────────────────
+function getFirstReadySession() {
+  return Object.values(state.sessions).find(s => s.status === 'ready')?.clientId || null;
+}
+
+
+// ───────────────────────────────────────────────────────────────────────────────
+// VALIDADOR WHATSAPP — usa sesión automática
+// ───────────────────────────────────────────────────────────────────────────────
+const validatorResults = [];
+
+function getValidatorSession() {
+  const clientId = Object.values(state.sessions).find(s => s.status === 'ready')?.clientId;
+  if (!clientId) { showToast('No hay sesiones conectadas. Conecta al menos una.', 'error'); }
+  return clientId || null;
+}
+
+async function validateSingle() {
+  const num = document.getElementById('val-single-input').value.trim();
+  if (!num) { showToast('Ingresa un número', 'error'); return; }
+  const clientId = getValidatorSession();
+  if (!clientId) return;
+  const btn = document.getElementById('btn-val-single');
+  btn.disabled = true; btn.textContent = '...';
+  try {
+    const res = await apiFetch('/api/check-whatsapp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId, numero: num })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    const entry = { numero: num, hasWhatsapp: data.hasWhatsapp, jid: data.jid || '', hora: new Date().toLocaleTimeString('es-MX') };
+    validatorResults.unshift(entry);
+    updateValidatorStats();
+    renderValidatorTable();
+    document.getElementById('btn-export-validator').style.display = '';
+    showToast(data.hasWhatsapp ? `✅ ${num} tiene WhatsApp` : `❌ ${num} NO tiene WhatsApp`, data.hasWhatsapp ? 'success' : 'error');
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Verificar';
+  }
+}
+
+async function validateBulk() {
+  const raw = document.getElementById('val-bulk-input').value.trim();
+  if (!raw) { showToast('Ingresa al menos un número', 'error'); return; }
+  const clientId = getValidatorSession();
+  if (!clientId) return;
+  const nums = [...new Set(raw.split('\n').map(n => n.trim()).filter(n => n.length >= 8))].slice(0, 500);
+  if (!nums.length) { showToast('Sin números válidos', 'error'); return; }
+
+  const btn = document.getElementById('btn-val-bulk');
+  const progress = document.getElementById('val-progress-wrap');
+  const bar = document.getElementById('val-progress-bar');
+  const text = document.getElementById('val-progress-text');
+  btn.disabled = true; btn.textContent = '⏳ Validando...';
+  progress.style.display = 'block';
+
+  let done = 0;
+  for (const num of nums) {
+    try {
+      const res = await apiFetch('/api/check-whatsapp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId, numero: num })
+      });
+      const data = await res.json();
+      const entry = { numero: num, hasWhatsapp: data.hasWhatsapp, jid: data.jid || '', hora: new Date().toLocaleTimeString('es-MX') };
+      validatorResults.unshift(entry);
+    } catch (e) {
+      validatorResults.unshift({ numero: num, hasWhatsapp: false, jid: 'Error', hora: new Date().toLocaleTimeString('es-MX') });
+    }
+    done++;
+    const pct = Math.round((done / nums.length) * 100);
+    bar.style.width = `${pct}%`;
+    text.textContent = `${done} / ${nums.length}`;
+    updateValidatorStats();
+    renderValidatorTable();
+    await new Promise(r => setTimeout(r, 1500)); // delay entre validaciones
+  }
+
+  btn.disabled = false; btn.textContent = '🔍 Iniciar Validación Masiva';
+  document.getElementById('btn-export-validator').style.display = '';
+  showToast(`Validación completa: ${nums.length} números procesados`, 'success');
+}
+
+function updateValidatorStats() {
+  const ok  = validatorResults.filter(r => r.hasWhatsapp).length;
+  const no  = validatorResults.filter(r => !r.hasWhatsapp).length;
+  document.getElementById('val-total').textContent = validatorResults.length;
+  document.getElementById('val-ok').textContent   = ok;
+  document.getElementById('val-fail').textContent  = no;
+  document.getElementById('val-rate').textContent  = validatorResults.length > 0 ? `${Math.round((ok / validatorResults.length) * 100)}%` : '—';
+}
+
+function renderValidatorTable() {
+  const filter = document.getElementById('val-filter')?.value || '';
+  const rows = filter === 'si' ? validatorResults.filter(r => r.hasWhatsapp)
+    : filter === 'no' ? validatorResults.filter(r => !r.hasWhatsapp)
+    : validatorResults;
+  const tbody = document.getElementById('val-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = rows.map((r, i) => `
+    <tr>
+      <td style="color:var(--text-3);font-size:12px">${i + 1}</td>
+      <td><strong>${esc(r.numero)}</strong></td>
+      <td><span class="status-pill ${r.hasWhatsapp ? 'pill-sent' : 'pill-error'}">${r.hasWhatsapp ? '✅ Sí' : '❌ No'}</span></td>
+      <td style="font-size:11px;color:var(--text-3)">${esc(r.jid)}</td>
+      <td style="font-size:11px;color:var(--text-3)">${esc(r.hora)}</td>
+    </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-3);padding:30px">Sin resultados.</td></tr>';
+}
+
+function applyValidatorFilter() { renderValidatorTable(); }
+
+function clearValidator() {
+  validatorResults.length = 0;
+  document.getElementById('val-bulk-input').value = '';
+  document.getElementById('val-single-input').value = '';
+  document.getElementById('val-progress-wrap').style.display = 'none';
+  document.getElementById('btn-export-validator').style.display = 'none';
+  updateValidatorStats();
+  document.getElementById('val-tbody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-3);padding:40px">Ingresa números y presiona Validar.</td></tr>';
+}
+
+function exportValidatorCSV() {
+  const rows = ['Numero,WhatsApp,JID,Hora', ...validatorResults.map(r => `${r.numero},${r.hasWhatsapp ? 'Si' : 'No'},${r.jid},${r.hora}`)];
+  downloadCSV(rows.join('\n'), `validacion_${new Date().toISOString().slice(0,10)}.csv`);
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 // SEND SINGLE
-// ═══════════════════════════════════════════════════════════════════════════════
+// ───────────────────────────────────────────────────────────────────────────────
 async function sendSingle() {
   const clientId = document.getElementById('send-session').value;
   const to = document.getElementById('send-to').value.trim();
