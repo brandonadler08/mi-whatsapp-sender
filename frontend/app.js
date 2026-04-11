@@ -279,6 +279,7 @@ async function sendInboxReply() {
   try {
     const res = await apiFetch('/api/send', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ clientId: inboxCRM.activeSession, to: inboxCRM.activeContact, message: msg }),
     });
     const data = await res.json();
@@ -761,7 +762,12 @@ function initSocket() {
     trLog('ok', `🏁 ¡Entrenamiento completado! ${sent} enviados, ${errors} errores — ${formatEta(duration)} totales`);
     showToast(`Entrenamiento completado: ${sent} mensajes enviados`, 'success', 6000);
   });
+
+  // ── Validador: progreso en tiempo real ────────────────────────────────────
+  socket.on('validator:progress', (data) => handleValidatorProgress(data));
+  socket.on('validator:complete', (data) => handleValidatorComplete(data));
 }
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // NAVIGATION
@@ -1012,19 +1018,20 @@ async function validateSingle() {
   const btn = document.getElementById('btn-val-single');
   btn.disabled = true; btn.textContent = '...';
   try {
-    const res = await apiFetch('/api/check-whatsapp', {
+    const res = await apiFetch('/api/check-number', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ clientId, numero: num })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
-    const entry = { numero: num, hasWhatsapp: data.hasWhatsapp, jid: data.jid || '', hora: new Date().toLocaleTimeString('es-MX') };
+    const hasWA = data.exists || data.hasWhatsapp || false;
+    const entry = { numero: num, hasWhatsapp: hasWA, jid: data.jid || '', hora: new Date().toLocaleTimeString('es-MX') };
     validatorResults.unshift(entry);
     updateValidatorStats();
     renderValidatorTable();
     document.getElementById('btn-export-validator').style.display = '';
-    showToast(data.hasWhatsapp ? `✅ ${num} tiene WhatsApp` : `❌ ${num} NO tiene WhatsApp`, data.hasWhatsapp ? 'success' : 'error');
+    showToast(hasWA ? `✅ ${num} tiene WhatsApp` : `❌ ${num} NO tiene WhatsApp`, hasWA ? 'success' : 'error');
   } catch (err) {
     showToast('Error: ' + err.message, 'error');
   } finally {
@@ -1038,7 +1045,7 @@ async function validateBulk() {
   const clientId = getValidatorSession();
   if (!clientId) return;
   const nums = [...new Set(raw.split('\n').map(n => n.trim()).filter(n => n.length >= 8))].slice(0, 500);
-  if (!nums.length) { showToast('Sin números válidos', 'error'); return; }
+  if (!nums.length) { showToast('Sin números válidos (mín 8 dígitos)', 'error'); return; }
 
   const btn = document.getElementById('btn-val-bulk');
   const progress = document.getElementById('val-progress-wrap');
@@ -1046,33 +1053,53 @@ async function validateBulk() {
   const text = document.getElementById('val-progress-text');
   btn.disabled = true; btn.textContent = '⏳ Validando...';
   progress.style.display = 'block';
+  bar.style.width = '0%';
+  text.textContent = `0 / ${nums.length}`;
 
-  let done = 0;
-  for (const num of nums) {
-    try {
-      const res = await apiFetch('/api/check-whatsapp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId, numero: num })
-      });
-      const data = await res.json();
-      const entry = { numero: num, hasWhatsapp: data.hasWhatsapp, jid: data.jid || '', hora: new Date().toLocaleTimeString('es-MX') };
-      validatorResults.unshift(entry);
-    } catch (e) {
-      validatorResults.unshift({ numero: num, hasWhatsapp: false, jid: 'Error', hora: new Date().toLocaleTimeString('es-MX') });
-    }
-    done++;
-    const pct = Math.round((done / nums.length) * 100);
-    bar.style.width = `${pct}%`;
-    text.textContent = `${done} / ${nums.length}`;
+  try {
+    // El backend procesa async y emite progreso por socket
+    const res = await apiFetch('/api/check-numbers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId, numeros: nums })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    // El progreso llega via eventos socket: validator:progress y validator:complete
+    showToast(`Validando ${nums.length} números en segundo plano...`, 'info');
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+    btn.disabled = false; btn.textContent = '🔍 Iniciar Validación Masiva';
+  }
+}
+
+// Eventos de socket para el validador masivo (inicializados en initSocket)
+function handleValidatorProgress(data) {
+  const { index, total, result } = data;
+  const bar = document.getElementById('val-progress-bar');
+  const text = document.getElementById('val-progress-text');
+  if (bar) bar.style.width = `${Math.round((index / total) * 100)}%`;
+  if (text) text.textContent = `${index} / ${total}`;
+
+  if (result) {
+    const hasWA = result.exists || result.hasWhatsapp || false;
+    const entry = {
+      numero: result.number || result.numero || '',
+      hasWhatsapp: hasWA,
+      jid: result.jid || '',
+      hora: new Date().toLocaleTimeString('es-MX')
+    };
+    validatorResults.unshift(entry);
     updateValidatorStats();
     renderValidatorTable();
-    await new Promise(r => setTimeout(r, 1500)); // delay entre validaciones
   }
+}
 
-  btn.disabled = false; btn.textContent = '🔍 Iniciar Validación Masiva';
+function handleValidatorComplete(data) {
+  const btn = document.getElementById('btn-val-bulk');
+  if (btn) { btn.disabled = false; btn.textContent = '🔍 Iniciar Validación Masiva'; }
   document.getElementById('btn-export-validator').style.display = '';
-  showToast(`Validación completa: ${nums.length} números procesados`, 'success');
+  showToast(`✅ Validación completa: ${data.withWA || 0} con WA / ${data.withoutWA || 0} sin WA`, 'success');
 }
 
 function updateValidatorStats() {
