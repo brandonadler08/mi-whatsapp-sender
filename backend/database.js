@@ -452,8 +452,85 @@ const stmts = {
   // ── Sessions por dueño ─────────────────────────────────────────────────────
   getSessionsByOwner(ownerId) {
     return all(`SELECT * FROM sessions WHERE owner_id = :owner`, { ':owner': ownerId });
-  }
+  },
+
+  // ── CRM Inbox ──────────────────────────────────────────────────────────────
+
+  // Contactos agrupados por número que han respondido en una sesión
+  getReplyContacts(clientId, ownerId, limit = 500) {
+    const params = { ':session': clientId, ':limit': limit || 500 };
+    let ownerFilter = '';
+    if (ownerId) {
+      ownerFilter = `AND r.owner_id = :owner`;
+      params[':owner'] = ownerId;
+    }
+    return all(`
+      SELECT
+        r.from_number,
+        r.session_id,
+        MAX(r.message) as last_message,
+        MAX(r.received_at) as last_time,
+        SUM(CASE WHEN r.is_read = 0 THEN 1 ELSE 0 END) as unread_count,
+        MAX(r.tag) as tag,
+        MAX(r.cuenta) as cuenta
+      FROM replies r
+      WHERE r.session_id = :session ${ownerFilter}
+      GROUP BY r.from_number, r.session_id
+      ORDER BY last_time DESC
+      LIMIT :limit
+    `, params);
+  },
+
+  // Hilo de conversación: combina mensajes enviados + respuestas recibidas
+  getConversationMessages(sessionId, fromNumber) {
+    const params = { ':session': sessionId, ':from': fromNumber };
+    // Mensajes enviados (outbound)
+    const sent = all(`
+      SELECT
+        m.id, m.numero as from_number, m.mensaje_final as message,
+        m.session_used as session_id, m.timestamp as ts,
+        'out' as direction, m.status
+      FROM messages m
+      WHERE m.session_used = :session AND m.numero = :from
+      ORDER BY m.timestamp ASC
+    `, params);
+    // Respuestas recibidas (inbound)
+    const received = all(`
+      SELECT
+        r.id, r.from_number, r.message, r.session_id,
+        r.received_at as ts, 'in' as direction,
+        r.is_read, r.tag, r.cuenta
+      FROM replies r
+      WHERE r.session_id = :session AND r.from_number = :from
+      ORDER BY r.received_at ASC
+    `, params);
+
+    return [...sent, ...received].sort((a, b) => new Date(a.ts) - new Date(b.ts));
+  },
+
+  // Marcar como leída toda la conversación de un número+sesión
+  markConversationRead(sessionId, fromNumber) {
+    run(`UPDATE replies SET is_read = 1
+         WHERE session_id = :session AND from_number = :from AND is_read = 0`,
+      { ':session': sessionId, ':from': fromNumber });
+    schedSave();
+  },
+
+  // Etiquetar conversación (guarda la etiqueta en el último reply del contacto)
+  tagConversation(sessionId, fromNumber, tag) {
+    run(`UPDATE replies SET tag = :tag
+         WHERE session_id = :session AND from_number = :from`,
+      { ':tag': tag, ':session': sessionId, ':from': fromNumber });
+    schedSave();
+  },
+
+  // Eliminar un reply individual
+  deleteReply(id) {
+    run(`DELETE FROM replies WHERE id = :id`, { ':id': id });
+    schedSave();
+  },
 };
+
 
 function deleteBatchFull(batchId) {
   run(`DELETE FROM messages WHERE batch_id = :id`, { ':id': batchId });

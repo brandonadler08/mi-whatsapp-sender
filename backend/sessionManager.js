@@ -181,7 +181,7 @@ class SessionManager extends EventEmitter {
     console.log(`[${clientId}] Session removed`);
   }
 
-  async sendMessage(clientId, to, message) {
+  async sendMessage(clientId, to, message, imageBuffer = null, imageMimetype = null) {
     const session = this.sessions.get(clientId);
     if (!session) throw new Error(`Session "${clientId}" not found`);
     if (session.status !== 'ready') throw new Error(`Session "${clientId}" is not ready`);
@@ -212,9 +212,21 @@ class SessionManager extends EventEmitter {
     }
 
     // --- Mejora Anti-Bloqueo: Simular Escritura ---
-    await this.simulateTyping(clientId, jid, message.length);
+    await this.simulateTyping(clientId, jid, (message || '').length);
 
-    const result = await session.sock.sendMessage(jid, { text: message });
+    let result;
+    if (imageBuffer) {
+      // Enviar imagen con caption
+      result = await session.sock.sendMessage(jid, {
+        image: imageBuffer,
+        caption: message || '',
+        mimetype: imageMimetype || 'image/jpeg',
+      });
+    } else {
+      // Enviar solo texto
+      result = await session.sock.sendMessage(jid, { text: message });
+    }
+
     return { success: true, messageId: result.key.id, chatId: jid };
   }
 
@@ -297,6 +309,40 @@ class SessionManager extends EventEmitter {
       }
     } catch (err) {
       console.error(`[AI ${clientId}] Error auto-Reply:`, err.message);
+    }
+  }
+
+  /**
+   * Verifica si un número tiene WhatsApp registrado.
+   * No envía ningún mensaje. Solo consulta la API de WA.
+   */
+  async checkNumber(clientId, numero) {
+    const session = this.sessions.get(clientId);
+    if (!session) throw new Error(`Sesión "${clientId}" no encontrada`);
+    if (session.status !== 'ready') throw new Error(`Sesión "${clientId}" no está lista`);
+
+    // Normalizar a 10 dígitos MX
+    const n = String(numero).replace(/\D/g, '');
+    let localN = n;
+    if (n.length === 13 && n.startsWith('521')) localN = n.slice(3);
+    else if (n.length === 12 && n.startsWith('52')) localN = n.slice(2);
+    else if (n.length === 11 && n.startsWith('1')) localN = n.slice(1);
+
+    if (localN.length !== 10) {
+      return { numero: numero, normalized: null, exists: false, jid: null, error: 'Número inválido (no tiene 10 dígitos)' };
+    }
+
+    const variations = [`52${localN}@s.whatsapp.net`, `521${localN}@s.whatsapp.net`];
+    try {
+      for (const v of variations) {
+        const result = await session.sock.onWhatsApp(v);
+        if (result && result.length > 0 && result[0].exists) {
+          return { numero: numero, normalized: localN, exists: true, jid: result[0].jid };
+        }
+      }
+      return { numero: numero, normalized: localN, exists: false, jid: null };
+    } catch (err) {
+      return { numero: numero, normalized: localN, exists: false, jid: null, error: err.message };
     }
   }
 }

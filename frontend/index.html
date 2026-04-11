@@ -10,6 +10,80 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
   <link rel="stylesheet" href="style.css" />
+  <style>
+    /* ── CRM Inbox — estilos de componentes ─────────────────────────────────── */
+    .inbox-session-item {
+      display:flex; align-items:center; gap:10px; padding:11px 14px;
+      cursor:pointer; border-bottom:1px solid var(--border); transition:background .15s;
+      position:relative;
+    }
+    .inbox-session-item:hover { background:var(--surface-2,rgba(255,255,255,0.05)); }
+    .inbox-session-item.active { background:rgba(99,102,241,.15); }
+    .inbox-session-avatar {
+      width:36px;height:36px;border-radius:50%;
+      background:linear-gradient(135deg,#6366f1,#8b5cf6);
+      display:flex;align-items:center;justify-content:center;
+      font-weight:700;font-size:14px;color:#fff;flex-shrink:0;
+    }
+    .inbox-session-avatar.offline { background:var(--surface-2,rgba(255,255,255,.1)); }
+    .inbox-session-name { font-size:13px;font-weight:600;color:var(--text-1); }
+    .inbox-session-status { font-size:11px;color:var(--text-3); }
+    .inbox-unread-badge {
+      margin-left:auto;background:#ef4444;color:#fff;
+      font-size:10px;font-weight:700;padding:2px 6px;border-radius:99px;flex-shrink:0;
+    }
+    /* Columna 2 - contacto */
+    .inbox-contact-item {
+      display:flex;align-items:flex-start;gap:10px;padding:12px 14px;
+      cursor:pointer;border-bottom:1px solid var(--border);transition:background .15s;
+    }
+    .inbox-contact-item:hover { background:var(--surface-2,rgba(255,255,255,0.05)); }
+    .inbox-contact-item.active { background:rgba(99,102,241,.15); }
+    .inbox-contact-avatar {
+      width:38px;height:38px;border-radius:50%;
+      background:linear-gradient(135deg,#0ea5e9,#6366f1);
+      display:flex;align-items:center;justify-content:center;
+      font-weight:700;font-size:14px;color:#fff;flex-shrink:0;
+    }
+    .inbox-contact-meta { flex:1;min-width:0; }
+    .inbox-contact-name { font-size:13px;font-weight:600;color:var(--text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+    .inbox-contact-preview { font-size:11px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px; }
+    .inbox-contact-time { font-size:10px;color:var(--text-3);margin-top:2px;white-space:nowrap; }
+    .inbox-contact-unread { background:#ef4444;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:99px; }
+    /* Tags */
+    .inbox-tag { display:inline-block;font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600; }
+    .inbox-tag-interesado { background:rgba(234,179,8,.2);color:#ca8a04; }
+    .inbox-tag-seguimiento { background:rgba(99,102,241,.2);color:#6366f1; }
+    .inbox-tag-noInteresado { background:rgba(239,68,68,.2);color:#ef4444; }
+    .inbox-tag-cerrado { background:rgba(34,197,94,.2);color:#16a34a; }
+    /* Filtros de etiqueta col2 */
+    .inbox-tag-filter {
+      font-size:10px;padding:3px 8px;border-radius:99px;border:1px solid var(--border);
+      background:transparent;color:var(--text-2);cursor:pointer;transition:all .15s;
+    }
+    .inbox-tag-filter.active { background:var(--accent);color:#fff;border-color:var(--accent); }
+    /* Burbujas de chat */
+    .chat-bubble-wrap { display:flex; }
+    .chat-bubble-wrap.out { justify-content:flex-end; }
+    .chat-bubble-wrap.in { justify-content:flex-start; }
+    .chat-bubble {
+      max-width:68%;padding:9px 14px;border-radius:16px;
+      font-size:13px;line-height:1.5;position:relative;word-break:break-word;
+    }
+    .chat-bubble-wrap.out .chat-bubble {
+      background:var(--accent,#6366f1);color:#fff;border-bottom-right-radius:4px;
+    }
+    .chat-bubble-wrap.in .chat-bubble {
+      background:var(--surface,rgba(255,255,255,.07));color:var(--text-1);border-bottom-left-radius:4px;border:1px solid var(--border);
+    }
+    .chat-bubble-time { font-size:10px;opacity:.6;margin-top:4px;text-align:right; }
+    .chat-date-sep { text-align:center;font-size:11px;color:var(--text-3);margin:6px 0;padding:4px 12px;background:var(--surface-2,rgba(255,255,255,.05));border-radius:99px;align-self:center; }
+    /* Typing indicator */
+    @keyframes blink { 0%,80%,100%{opacity:.2} 40%{opacity:1} }
+    .typing-dot { width:6px;height:6px;border-radius:50%;background:var(--text-3);animation:blink 1.4s infinite both; }
+    .typing-dot:nth-child(2){animation-delay:.2s}.typing-dot:nth-child(3){animation-delay:.4s}
+  </style>
+
 </head>
 
 <body>
@@ -83,6 +157,9 @@
         </button>
         <button class="nav-item" id="nav-bulk" onclick="navigate('bulk')">
           <span class="icon">🚀</span> Envío Masivo XLSX
+        </button>
+        <button class="nav-item" id="nav-validator" onclick="navigate('validator')">
+          <span class="icon">🔍</span> Validador WhatsApp
         </button>
         <button class="nav-item" id="nav-inbox" onclick="navigate('inbox')">
           <span class="icon">📥</span> Bandeja de Entrada
@@ -277,16 +354,45 @@
                 <label class="form-label">Retraso entre mensajes (aleatorio)</label>
                 <div style="display:flex;gap:10px;align-items:center">
                   <div style="flex:1">
-                    <div class="form-label" style="font-size:10px;margin-bottom:4px">MÍNIMO (ms)</div>
-                    <input class="form-control" id="bulk-delay-min" type="number" value="1000" min="500" max="60000" />
+                    <div class="form-label" style="font-size:10px;margin-bottom:4px">MÍNIMO (seg)</div>
+                    <input class="form-control" id="bulk-delay-min" type="number" value="20" min="10" max="300" onchange="updateDelayHint()" />
                   </div>
                   <div style="color:var(--text-3);padding-top:18px;font-size:18px">→</div>
                   <div style="flex:1">
-                    <div class="form-label" style="font-size:10px;margin-bottom:4px">MÁXIMO (ms)</div>
-                    <input class="form-control" id="bulk-delay-max" type="number" value="15000" min="500" max="60000" />
+                    <div class="form-label" style="font-size:10px;margin-bottom:4px">MÁXIMO (seg)</div>
+                    <input class="form-control" id="bulk-delay-max" type="number" value="45" min="10" max="300" onchange="updateDelayHint()" />
                   </div>
                 </div>
-                <div class="form-hint" id="delay-hint">Cada mensaje espera entre <b>1</b> y <b>15</b> segundos al azar
+                <div class="form-hint" id="delay-hint">Cada mensaje espera entre <b>20</b> y <b>45</b> segundos al azar 🏂 (recomendado)
+                </div>
+                <div id="delay-risk-warn" style="display:none;margin-top:6px;padding:8px 12px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;font-size:12px;color:var(--danger)">
+                  ⚠️ <b>Riesgo de bloqueo:</b> Usas un delay menor a 15 segundos. WhatsApp puede suspender la cuenta.
+                </div>
+              </div>
+
+              <!-- ── Seguridad avanzada ── -->
+              <div class="form-group">
+                <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--text-3);margin-bottom:10px;text-transform:uppercase">🛡️ Protección Anti-Bloqueo</div>
+
+                <div style="display:flex;gap:10px;margin-bottom:10px">
+                  <div style="flex:1">
+                    <div class="form-label" style="font-size:10px;margin-bottom:4px">LÍMITE por sesión/día</div>
+                    <input class="form-control" id="bulk-daily-limit" type="number" value="150" min="10" max="1000"
+                      title="Máx mensajes que puede enviar cada número en 24h antes de hacer pausa" />
+                    <div class="form-hint" style="font-size:10px">msgs máx/sesión/día</div>
+                  </div>
+                  <div style="flex:1">
+                    <div class="form-label" style="font-size:10px;margin-bottom:4px">PAUSA cada N msgs</div>
+                    <input class="form-control" id="bulk-cooling-every" type="number" value="30" min="5" max="200"
+                      title="Cada cuántos mensajes la sesión activa descansa" />
+                    <div class="form-hint" style="font-size:10px">msgs antes de enfriar</div>
+                  </div>
+                  <div style="flex:1">
+                    <div class="form-label" style="font-size:10px;margin-bottom:4px">DESCANSO (seg)</div>
+                    <input class="form-control" id="bulk-cooling-secs" type="number" value="120" min="30" max="600"
+                      title="Cuántos segundos descansa la sesión durante la pausa" />
+                    <div class="form-hint" style="font-size:10px">seg de pausa/enfriamiento</div>
+                  </div>
                 </div>
               </div>
 
@@ -320,6 +426,9 @@
 
               <button class="btn btn-primary" id="btn-send-bulk" onclick="sendBulkXlsx()" style="width:100%" disabled>
                 🚀 Iniciar Envío Masivo
+              </button>
+              <button class="btn btn-danger" id="btn-stop-bulk" onclick="stopBulkXlsx()" style="width:100%;display:none">
+                ⏹ Detener Envío
               </button>
             </div>
           </div>
@@ -503,29 +612,128 @@
         </div>
       </section>
 
-      <!-- ── INBOX (Bandeja de Entrada) ────────────────────────────────────────── -->
+      <!-- ── INBOX CRM (Bandeja de Entrada) ──────────────────────────────────── -->
       <section class="page" id="page-inbox">
-        <div class="section-header">
+
+        <!-- Toolbar superior -->
+        <div style="padding:16px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--surface);flex-shrink:0">
           <div>
-            <div class="section-title">Bandeja de Entrada</div>
-            <div class="section-sub">Respuestas de usuarios en tiempo real</div>
+            <div class="section-title" style="margin:0">Bandeja de Entrada</div>
+            <div class="section-sub" style="margin:0">CRM de conversaciones en tiempo real</div>
           </div>
-          <div style="display:flex;gap:10px">
-            <button class="btn btn-secondary btn-sm" onclick="markAllRepliesAsRead()">✔️ Marcar todo leído</button>
-            <button class="btn btn-secondary btn-sm" onclick="loadInbox()">🔄 Actualizar</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary btn-sm" onclick="refreshInboxSessions()">🔄 Actualizar</button>
+            <button class="btn btn-secondary btn-sm" onclick="markAllRepliesAsRead()">✔️ Todo leído</button>
           </div>
         </div>
-        <div class="card" style="padding:0;overflow:hidden">
-          <div
-            style="padding:15px; background:var(--surface-2, rgba(255,255,255,0.03)); border-bottom:1px solid var(--border); font-size:13px; color:var(--text-2);">
-            Mostrando <span id="inbox-count" style="font-weight:bold;color:var(--text-1)">0</span> mensajes entrantes.
+
+        <!-- Layout 3 columnas -->
+        <div id="inbox-crm-layout" style="display:flex;flex:1;min-height:0;overflow:hidden">
+
+          <!-- ── Columna 1: Líneas / Sesiones ── -->
+          <div id="inbox-col-sessions"
+            style="width:210px;flex-shrink:0;border-right:1px solid var(--border);overflow-y:auto;background:var(--surface)">
+            <div style="padding:12px 14px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--text-3);text-transform:uppercase;border-bottom:1px solid var(--border)">
+              LÍNEAS
+            </div>
+            <div id="inbox-session-list">
+              <div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">Cargando…</div>
+            </div>
           </div>
-          <div id="inbox-messages"
-            style="max-height:600px;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:10px">
-            <div style="text-align:center;color:var(--text-3);padding:40px">Sin mensajes entrantes.</div>
+
+          <!-- ── Columna 2: Contactos ── -->
+          <div id="inbox-col-contacts"
+            style="width:280px;flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column;background:var(--surface)">
+            <!-- Header col2 -->
+            <div style="padding:12px 14px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:8px">
+              <div id="inbox-contacts-header" style="font-size:13px;font-weight:700;color:var(--text-1)">Selecciona una línea</div>
+              <input class="form-control" id="inbox-search" type="search" placeholder="🔍 Buscar número o nombre…"
+                style="font-size:12px;padding:6px 10px" oninput="searchInboxContacts(this.value)" />
+              <!-- Filtro de etiquetas -->
+              <div style="display:flex;gap:4px;flex-wrap:wrap" id="inbox-tag-filters">
+                <button class="inbox-tag-filter active" data-tag="" onclick="filterInboxTag(this,'')">Todos</button>
+                <button class="inbox-tag-filter" data-tag="interesado" onclick="filterInboxTag(this,'interesado')">⭐ Interesado</button>
+                <button class="inbox-tag-filter" data-tag="seguimiento" onclick="filterInboxTag(this,'seguimiento')">⏰ Seguimiento</button>
+                <button class="inbox-tag-filter" data-tag="noInteresado" onclick="filterInboxTag(this,'noInteresado')">❌ No</button>
+                <button class="inbox-tag-filter" data-tag="cerrado" onclick="filterInboxTag(this,'cerrado')">✅ Cerrado</button>
+              </div>
+            </div>
+            <!-- Lista de contactos -->
+            <div id="inbox-contact-list" style="flex:1;overflow-y:auto">
+              <div style="padding:30px;text-align:center;color:var(--text-3);font-size:13px">
+                Selecciona una línea para ver sus conversaciones
+              </div>
+            </div>
           </div>
+
+          <!-- ── Columna 3: Chat & Respuesta ── -->
+          <div id="inbox-col-chat" style="flex:1;display:flex;flex-direction:column;min-width:0">
+
+            <!-- Estado vacío -->
+            <div id="inbox-chat-empty" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-3)">
+              <div style="font-size:48px;margin-bottom:14px">💬</div>
+              <div style="font-size:15px;font-weight:600">Selecciona una conversación</div>
+              <div style="font-size:13px;margin-top:6px">Elige un contacto de la columna izquierda</div>
+            </div>
+
+            <!-- Vista activa de chat -->
+            <div id="inbox-chat-view" style="display:none;flex:1;flex-direction:column;min-height:0">
+
+              <!-- Header del chat -->
+              <div id="inbox-chat-header"
+                style="padding:12px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--surface);flex-shrink:0">
+                <div style="display:flex;align-items:center;gap:12px">
+                  <div id="inbox-avatar" style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent-2,#7c3aed));display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;color:#fff">?</div>
+                  <div>
+                    <div id="inbox-chat-name" style="font-weight:700;font-size:14px">—</div>
+                    <div id="inbox-chat-phone" style="font-size:12px;color:var(--text-3)">—</div>
+                  </div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <!-- Etiquetas -->
+                  <select id="inbox-tag-select" class="form-control"
+                    style="font-size:12px;padding:5px 8px;width:auto"
+                    onchange="setConversationTag(this.value)">
+                    <option value="">🏷️ Sin etiqueta</option>
+                    <option value="interesado">⭐ Interesado</option>
+                    <option value="seguimiento">⏰ Seguimiento</option>
+                    <option value="noInteresado">❌ No interesado</option>
+                    <option value="cerrado">✅ Cerrado</option>
+                  </select>
+                  <button class="btn btn-secondary btn-sm" title="Actualizar conversación" onclick="refreshConversation()">🔄</button>
+                </div>
+              </div>
+
+              <!-- Burbujas de chat -->
+              <div id="inbox-chat-messages"
+                style="flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:10px;background:var(--bg)">
+                <div style="text-align:center;color:var(--text-3);font-size:13px;padding:20px">Cargando mensajes…</div>
+              </div>
+
+              <!-- Caja de respuesta -->
+              <div style="padding:12px 16px;border-top:1px solid var(--border);background:var(--surface);flex-shrink:0">
+                <div style="display:flex;gap:10px;align-items:flex-end">
+                  <textarea id="inbox-reply-input"
+                    class="form-control"
+                    placeholder="Escribe tu respuesta…"
+                    style="flex:1;min-height:44px;max-height:160px;resize:vertical;font-size:14px;line-height:1.5;padding:10px 14px"
+                    onkeydown="inboxReplyKeydown(event)"></textarea>
+                  <button class="btn btn-primary" id="btn-inbox-send" onclick="sendInboxReply()" style="padding:10px 18px;flex-shrink:0">
+                    ➤ Enviar
+                  </button>
+                </div>
+                <div style="font-size:11px;color:var(--text-3);margin-top:6px">
+                  <span id="inbox-reply-session-label">Línea: —</span> •
+                  Ctrl+Enter para enviar
+                </div>
+              </div>
+            </div>
+          </div>
+
         </div>
       </section>
+
+
 
       <!-- ── LOG ───────────────────────────────────────────────────────────────── -->
       <section class="page" id="page-log">
@@ -670,7 +878,23 @@
                 </div>
               </div>
 
+
               <!-- Session selector -->
+              <div class="form-group">
+                <label class="form-label" for="tr-maturation">🔒 Período de maduración post-entrenamiento</label>
+                <select class="form-control" id="tr-maturation">
+                  <option value="6">6 horas (mínimo)</option>
+                  <option value="12">12 horas</option>
+                  <option value="24" selected>24 horas (recomendado)</option>
+                  <option value="48">48 horas (más seguro)</option>
+                  <option value="72">72 horas (máximo)</option>
+                </select>
+                <div class="form-hint">
+                  Durante este tiempo la sesión <b>no podrá usarse para envío masivo</b>.
+                  El reloj inicia cuando <b>termina</b> el entrenamiento.
+                </div>
+              </div>
+
               <div class="form-group">
                 <label class="form-label">Sesiones participantes</label>
                 <div id="tr-session-list"
@@ -679,6 +903,7 @@
                 </div>
                 <div class="form-hint">Solo las sesiones marcadas participarán en el entrenamiento</div>
               </div>
+
 
               <!-- ETA -->
               <div id="tr-eta-box"
@@ -753,6 +978,125 @@
                 </tr>
               </tbody>
             </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── VALIDADOR WHATSAPP ─────────────────────────────────────────────── -->
+      <section class="page" id="page-validator">
+        <div class="section-header">
+          <div>
+            <div class="section-title">🔍 Validador de WhatsApp</div>
+            <div class="section-sub">Verifica si uno o varios números están registrados en WhatsApp</div>
+          </div>
+          <div style="display:flex;gap:10px">
+            <button class="btn btn-secondary btn-sm" onclick="clearValidator()">🗑️ Limpiar</button>
+            <button class="btn btn-secondary btn-sm" id="btn-export-validator" onclick="exportValidatorCSV()" style="display:none">⬇️ Exportar CSV</button>
+          </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-row" style="margin-bottom:20px">
+          <div class="stat-card">
+            <div class="stat-label">Total validados</div>
+            <div class="stat-value" id="val-total">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">✅ Con WhatsApp</div>
+            <div class="stat-value" style="-webkit-text-fill-color:var(--success)" id="val-ok">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">❌ Sin WhatsApp</div>
+            <div class="stat-value" style="-webkit-text-fill-color:var(--danger)" id="val-fail">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Tasa WA</div>
+            <div class="stat-value" id="val-rate">—</div>
+          </div>
+        </div>
+
+        <div class="bulk-layout">
+          <!-- Panel de configuración -->
+          <div style="display:flex;flex-direction:column;gap:20px">
+
+            <div class="card">
+              <div class="card-title">⚙️ Configuración</div>
+              <div class="form-group">
+                <label class="form-label" for="val-session">Sesión a usar para validar</label>
+                <select class="form-control" id="val-session">
+                  <option value="">— Selecciona una sesión conectada —</option>
+                </select>
+                <div class="form-hint">Se usará esta sesión para consultar WhatsApp. No se envía ningún mensaje.</div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">📋 Números a validar</div>
+              <div class="form-group">
+                <label class="form-label">Un número único</label>
+                <div style="display:flex;gap:8px">
+                  <input class="form-control" id="val-single-input" type="tel"
+                    placeholder="5512345678" style="flex:1" />
+                  <button class="btn btn-primary" id="btn-val-single" onclick="validateSingle()">Verificar</button>
+                </div>
+                <div class="form-hint">Solo 10 dígitos (México). No incluyas el +52.</div>
+              </div>
+
+              <div style="border-top:1px solid var(--border);margin:16px 0"></div>
+
+              <div class="form-group">
+                <label class="form-label">Lista masiva (uno por línea)</label>
+                <textarea class="form-control" id="val-bulk-input" style="min-height:160px;font-family:monospace;font-size:13px"
+                  placeholder="5512345678&#10;5598765432&#10;5511223344"></textarea>
+                <div class="form-hint">Máximo 500 números por lote.</div>
+              </div>
+
+              <!-- Barra de progreso -->
+              <div id="val-progress-wrap" style="display:none;margin-bottom:14px">
+                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px">
+                  <span style="color:var(--text-2)">Validando…</span>
+                  <span id="val-progress-text" style="color:var(--accent)">0 / 0</span>
+                </div>
+                <div class="progress-bar-wrapper">
+                  <div class="progress-bar-fill" id="val-progress-bar" style="transition:width .3s ease"></div>
+                </div>
+              </div>
+
+              <button class="btn btn-primary" id="btn-val-bulk" onclick="validateBulk()" style="width:100%">
+                🔍 Iniciar Validación Masiva
+              </button>
+            </div>
+          </div>
+
+          <!-- Tabla de resultados -->
+          <div class="card" style="padding:0;overflow:hidden">
+            <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+              <span class="card-title" style="margin-bottom:0">📊 Resultados</span>
+              <div style="display:flex;gap:8px">
+                <select class="form-control" id="val-filter" onchange="applyValidatorFilter()"
+                  style="width:160px;padding:6px 10px;font-size:13px">
+                  <option value="">Todos</option>
+                  <option value="si">✅ Con WhatsApp</option>
+                  <option value="no">❌ Sin WhatsApp</option>
+                </select>
+              </div>
+            </div>
+            <div style="overflow:auto;max-height:560px">
+              <table class="data-table" id="val-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Número</th>
+                    <th>WhatsApp</th>
+                    <th>JID de WA</th>
+                    <th>Hora</th>
+                  </tr>
+                </thead>
+                <tbody id="val-tbody">
+                  <tr><td colspan="5" style="text-align:center;color:var(--text-3);padding:40px">Ingresa números y presiona Validar.</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </section>

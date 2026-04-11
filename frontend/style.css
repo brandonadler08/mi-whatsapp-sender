@@ -26,11 +26,13 @@
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
+html,body{height:100%}
 body{
   font-family:'Inter',system-ui,sans-serif;
   background:var(--bg-base);
   color:var(--text-1);
   min-height:100vh;
+  height:100%;
   overflow-x:hidden;
 }
 body::before{
@@ -95,7 +97,7 @@ body::before{
 .conn-dot.connected{background:var(--success);box-shadow:0 0 8px var(--success)}
 
 /* ── Main ───────────────────────────────────────────────────────────────────── */
-.main{flex:1;margin-left:240px;display:flex;flex-direction:column;min-height:100vh}
+.main{flex:1;margin-left:240px;display:flex;flex-direction:column;min-height:100vh;height:100vh;overflow:hidden}
 
 /* ── Topbar ─────────────────────────────────────────────────────────────────── */
 .topbar{
@@ -130,8 +132,11 @@ body::before{
 .btn-icon{padding:8px 10px}
 
 /* ── Pages ──────────────────────────────────────────────────────────────────── */
-.page{display:none;padding:28px;animation:fadeIn .3s ease}
+.page{display:none;padding:28px;animation:fadeIn .3s ease;overflow-y:auto}
 .page.active{display:block}
+/* Inbox CRM necesita flex y sin padding propio */
+#page-inbox{padding:0;overflow:hidden}
+#page-inbox.active{display:flex !important;flex-direction:column;height:calc(100vh - 64px)}
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 
 .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;gap:12px;flex-wrap:wrap}

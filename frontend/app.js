@@ -1,100 +1,358 @@
 'use strict';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// INBOX LOGIC
+// INBOX CRM — Estado y helpers
 // ═══════════════════════════════════════════════════════════════════════════════
+const inboxCRM = {
+  activeSession: null,   // clientId de la sesión seleccionada
+  activeContact: null,   // from_number del contacto activo
+  contacts: [],          // contactos de la sesión activa (raw del servidor)
+  tagFilter: '',         // filtro de etiqueta activo
+  searchQ: '',           // texto de búsqueda
+};
 
-async function loadInbox() {
-  try {
-    const res = await apiFetch('/api/replies');
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-
-    state.inbox.replies = data.replies || [];
-    state.inbox.unreadCount = data.unreadCount || 0;
-    updateInboxBadge();
-    renderInbox();
-  } catch (err) {
-    showToast('Error cargando bandeja de entrada: ' + err.message, 'error');
-  }
-}
-
-function updateInboxBadge() {
+// ── Badge de no leídos (sidebar) ─────────────────────────────────────────────
+function updateInboxBadge(count) {
   const b = document.getElementById('badge-inbox');
   if (!b) return;
-  if (state.inbox.unreadCount > 0) {
-    b.textContent = state.inbox.unreadCount;
-    b.style.display = 'inline-block';
-  } else {
-    b.style.display = 'none';
+  const n = count !== undefined ? count : (state.inbox?.unreadCount || 0);
+  if (n > 0) { b.textContent = n; b.style.display = 'inline-block'; }
+  else { b.style.display = 'none'; }
+}
+
+// ── Compatibilidad con el código legado que llama markAllRepliesAsRead ────────
+async function markAllRepliesAsRead() {
+  try {
+    await apiFetch('/api/replies/all/read', { method: 'PUT' });
+    updateInboxBadge(0);
+    showToast('Todas las conversaciones marcadas como leídas', 'info');
+    refreshInboxSessions();
+  } catch (e) { console.error(e); }
+}
+
+// ── Cargar sesiones (Columna 1) ────────────────────────────────────────────────
+async function refreshInboxSessions() {
+  const list = document.getElementById('inbox-session-list');
+  if (!list) return;
+  list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">Cargando…</div>';
+  try {
+    const res = await apiFetch('/api/inbox/sessions');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    renderInboxSessions(data.sessions || []);
+    // Actualizar badge global
+    const totalUnread = (data.sessions || []).reduce((a, s) => a + (s.unread || 0), 0);
+    updateInboxBadge(totalUnread);
+  } catch (err) {
+    list.innerHTML = `<div style="padding:16px;color:var(--danger);font-size:12px">Error: ${esc(err.message)}</div>`;
   }
 }
 
-function renderInbox() {
-  const container = document.getElementById('inbox-messages');
-  document.getElementById('inbox-count').textContent = state.inbox.replies.length;
-  container.innerHTML = '';
+function renderInboxSessions(sessions) {
+  const list = document.getElementById('inbox-session-list');
+  if (!list) return;
+  if (!sessions.length) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">Sin sesiones conectadas</div>';
+    return;
+  }
+  list.innerHTML = sessions.map(s => {
+    const active = s.clientId === inboxCRM.activeSession ? 'active' : '';
+    const letter = (s.name || s.clientId || '?')[0].toUpperCase();
+    const offlineCls = s.status !== 'ready' ? 'offline' : '';
+    const statusDot = s.status === 'ready'
+      ? '<span style="color:#22c55e;font-size:10px">● En línea</span>'
+      : '<span style="color:var(--text-3);font-size:10px">○ Desconectada</span>';
+    const badge = s.unread > 0
+      ? `<span class="inbox-unread-badge">${s.unread}</span>` : '';
+    return `
+      <div class="inbox-session-item ${active}" onclick="selectInboxSession('${esc(s.clientId)}', this)" data-cid="${esc(s.clientId)}">
+        <div class="inbox-session-avatar ${offlineCls}">${esc(letter)}</div>
+        <div style="flex:1;min-width:0">
+          <div class="inbox-session-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.name || s.clientId)}</div>
+          ${statusDot}
+        </div>
+        ${badge}
+      </div>`;
+  }).join('');
+}
 
-  if (state.inbox.replies.length === 0) {
-    container.innerHTML = '<div style="text-align:center;color:var(--text-3);padding:40px">Sin mensajes entrantes.</div>';
+// ── Seleccionar sesión (Columna 1→2) ─────────────────────────────────────────
+async function selectInboxSession(clientId, el) {
+  inboxCRM.activeSession = clientId;
+  inboxCRM.activeContact = null;
+
+  // Actualizar estado activo en col1
+  document.querySelectorAll('#inbox-session-list .inbox-session-item').forEach(e => e.classList.remove('active'));
+  if (el) el.classList.add('active');
+
+  // Limpiar col3
+  document.getElementById('inbox-chat-empty').style.display = 'flex';
+  document.getElementById('inbox-chat-view').style.display = 'none';
+
+  // Header col2
+  const sess = (await apiFetch('/api/inbox/sessions').then(r => r.json()).catch(() => ({ sessions: [] }))).sessions?.find(s => s.clientId === clientId);
+  const hdr = document.getElementById('inbox-contacts-header');
+  if (hdr) hdr.textContent = sess ? `📱 ${sess.name || clientId}` : `📱 ${clientId}`;
+
+  await loadInboxContacts();
+}
+
+// ── Cargar contactos de la sesión (Columna 2) ─────────────────────────────────
+async function loadInboxContacts() {
+  const cid = inboxCRM.activeSession;
+  if (!cid) return;
+  const list = document.getElementById('inbox-contact-list');
+  list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">Cargando contactos…</div>';
+  try {
+    const q = inboxCRM.searchQ ? `&search=${encodeURIComponent(inboxCRM.searchQ)}` : '';
+    const res = await apiFetch(`/api/inbox/contacts?clientId=${encodeURIComponent(cid)}${q}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    inboxCRM.contacts = data.contacts || [];
+    renderInboxContacts();
+  } catch (err) {
+    list.innerHTML = `<div style="padding:16px;color:var(--danger);font-size:12px">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+function renderInboxContacts() {
+  const list = document.getElementById('inbox-contact-list');
+  if (!list) return;
+  let contacts = inboxCRM.contacts;
+
+  // Filtrar por etiqueta
+  if (inboxCRM.tagFilter) contacts = contacts.filter(c => c.tag === inboxCRM.tagFilter);
+  // Filtrar por búsqueda
+  if (inboxCRM.searchQ) {
+    const q = inboxCRM.searchQ.toLowerCase();
+    contacts = contacts.filter(c => (c.from_number || '').includes(q) || (c.cuenta || '').toLowerCase().includes(q));
+  }
+
+  if (!contacts.length) {
+    list.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-3);font-size:13px">Sin conversaciones</div>';
     return;
   }
 
-  state.inbox.replies.forEach(r => {
-    const div = document.createElement('div');
-    div.style.padding = '12px';
-    div.style.borderRadius = '8px';
-    div.style.background = r.is_read ? 'var(--surface-3)' : 'rgba(99, 102, 241, 0.1)';
-    div.style.borderLeft = r.is_read ? '4px solid transparent' : '4px solid var(--accent)';
-    div.style.cursor = 'pointer';
-    div.style.display = 'flex';
-    div.style.flexDirection = 'column';
-    div.style.gap = '6px';
+  list.innerHTML = contacts.map(c => {
+    const active = c.from_number === inboxCRM.activeContact ? 'active' : '';
+    const name = c.cuenta || c.from_number || '—';
+    const letter = name[0].toUpperCase();
+    const preview = c.last_message ? esc(String(c.last_message).slice(0, 55)) : '—';
+    const ts = c.last_time ? relativeTime(c.last_time) : '';
+    const unreadBadge = c.unread_count > 0
+      ? `<span class="inbox-contact-unread">${c.unread_count}</span>` : '';
+    const tagHtml = c.tag ? `<span class="inbox-tag inbox-tag-${c.tag}">${tagLabel(c.tag)}</span>` : '';
 
-    div.onclick = () => { markReplyAsRead(r.id); };
-
-    const time = new Date(r.timestamp).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' });
-    const author = r.author_name ? ' (' + r.author_name + ')' : '';
-    const sessionName = r.session_name || r.session_id;
-
-    div.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <div>
-          <strong style="color:var(--text-1)">${r.from_number}${author}</strong>
-          <span style="color:var(--text-3); font-size:12px; margin-left:8px;">→ A la sesión: ${sessionName}</span>
+    return `
+      <div class="inbox-contact-item ${active}"
+        onclick="openInboxConversation('${esc(c.from_number)}','${esc(name)}', '${esc(c.tag || '')}', this)"
+        data-number="${esc(c.from_number)}">
+        <div class="inbox-contact-avatar">${esc(letter)}</div>
+        <div class="inbox-contact-meta">
+          <div class="inbox-contact-name">${esc(name)}</div>
+          <div class="inbox-contact-preview">${preview}</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:3px">
+            ${tagHtml}
+            <span class="inbox-contact-time">${ts}</span>
+            ${unreadBadge}
+          </div>
         </div>
-        <span style="font-size:11px; color:var(--text-3)">${time}</span>
+      </div>`;
+  }).join('');
+}
+
+// ── Abrir conversación (Columna 3) ────────────────────────────────────────────
+async function openInboxConversation(fromNumber, name, tag, el) {
+  inboxCRM.activeContact = fromNumber;
+
+  // Marcar activo en col2
+  document.querySelectorAll('#inbox-contact-list .inbox-contact-item').forEach(e => e.classList.remove('active'));
+  if (el) el.classList.add('active');
+
+  // Mostrar panel de chat
+  document.getElementById('inbox-chat-empty').style.display = 'none';
+  const chatView = document.getElementById('inbox-chat-view');
+  chatView.style.display = 'flex';
+
+  // Header
+  const letter = name[0].toUpperCase();
+  document.getElementById('inbox-avatar').textContent = letter;
+  document.getElementById('inbox-chat-name').textContent = name;
+  document.getElementById('inbox-chat-phone').textContent = fromNumber;
+  document.getElementById('inbox-reply-session-label').textContent = `Línea: ${inboxCRM.activeSession}`;
+
+  // Etiqueta actual
+  const tagSel = document.getElementById('inbox-tag-select');
+  if (tagSel) tagSel.value = tag || '';
+
+  // Cargar mensajes
+  await loadConversationMessages(fromNumber);
+
+  // Actualizar contador de no leídos en lista contactos (optimista)
+  const contact = inboxCRM.contacts.find(c => c.from_number === fromNumber);
+  if (contact) { contact.unread_count = 0; renderInboxContacts(); }
+
+  // Enfocar textarea
+  setTimeout(() => { const ta = document.getElementById('inbox-reply-input'); if (ta) ta.focus(); }, 100);
+}
+
+async function loadConversationMessages(fromNumber) {
+  const cid = inboxCRM.activeSession;
+  const box = document.getElementById('inbox-chat-messages');
+  box.innerHTML = '<div style="text-align:center;color:var(--text-3);font-size:13px;padding:20px">Cargando mensajes…</div>';
+  try {
+    const res = await apiFetch(`/api/inbox/conversation?clientId=${encodeURIComponent(cid)}&from=${encodeURIComponent(fromNumber)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    renderChatBubbles(data.messages || []);
+  } catch (err) {
+    box.innerHTML = `<div style="text-align:center;color:var(--danger);font-size:13px;padding:20px">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+function renderChatBubbles(messages) {
+  const box = document.getElementById('inbox-chat-messages');
+  if (!box) return;
+  if (!messages.length) {
+    box.innerHTML = '<div style="text-align:center;color:var(--text-3);font-size:13px;padding:30px">Sin mensajes en esta conversación.</div>';
+    return;
+  }
+
+  let lastDate = '';
+  box.innerHTML = messages.map(m => {
+    const dir = m.direction === 'out' ? 'out' : 'in';
+    const ts = m.ts || m.timestamp || m.received_at || '';
+    const d = ts ? new Date(ts) : null;
+    const dateStr = d ? d.toLocaleDateString('es-MX', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+    const timeStr = d ? d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : '';
+    const statusIcon = dir === 'out' ? (m.status === 'sent' ? '✓✓' : '✓') : '';
+
+    let dateSep = '';
+    if (dateStr && dateStr !== lastDate) {
+      lastDate = dateStr;
+      dateSep = `<div class="chat-date-sep">${dateStr}</div>`;
+    }
+
+    return `${dateSep}
+    <div class="chat-bubble-wrap ${dir}">
+      <div class="chat-bubble">
+        <div>${esc(m.message || m.mensaje_final || '')}</div>
+        <div class="chat-bubble-time">${timeStr} ${statusIcon}</div>
       </div>
-      <div style="color:var(--text-2); font-size:14px; white-space:pre-wrap;">${esc(r.message_text)}</div>
-    `;
-    container.appendChild(div);
-  });
+    </div>`;
+  }).join('');
+
+  // Hacer scroll al fondo
+  requestAnimationFrame(() => { box.scrollTop = box.scrollHeight; });
+}
+
+// ── Enviar respuesta ──────────────────────────────────────────────────────────
+async function sendInboxReply() {
+  const ta = document.getElementById('inbox-reply-input');
+  const btn = document.getElementById('btn-inbox-send');
+  const msg = ta?.value.trim();
+  if (!msg) return;
+  if (!inboxCRM.activeSession || !inboxCRM.activeContact) {
+    showToast('Selecciona una conversación primero', 'error'); return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '…';
+
+  // Mostrar burbuja optimista
+  appendChatBubble({ direction: 'out', message: msg, ts: new Date().toISOString(), status: 'pending' });
+  ta.value = '';
+
+  try {
+    const res = await apiFetch('/api/send', {
+      method: 'POST',
+      body: JSON.stringify({ clientId: inboxCRM.activeSession, to: inboxCRM.activeContact, message: msg }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    showToast('Mensaje enviado ✓', 'info');
+  } catch (err) {
+    showToast(`Error al enviar: ${err.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '➤ Enviar';
+  }
+}
+
+function appendChatBubble(msg) {
+  const box = document.getElementById('inbox-chat-messages');
+  if (!box) return;
+  const dir = msg.direction === 'out' ? 'out' : 'in';
+  const d = new Date(msg.ts || Date.now());
+  const timeStr = d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+  const statusIcon = dir === 'out' ? (msg.status === 'sent' ? '✓✓' : '✓') : '';
+  const el = document.createElement('div');
+  el.className = `chat-bubble-wrap ${dir}`;
+  el.innerHTML = `<div class="chat-bubble">
+    <div>${esc(msg.message || '')}</div>
+    <div class="chat-bubble-time">${timeStr} ${statusIcon}</div>
+  </div>`;
+  box.appendChild(el);
+  box.scrollTop = box.scrollHeight;
+}
+
+function inboxReplyKeydown(e) {
+  if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); sendInboxReply(); }
+}
+
+function refreshConversation() {
+  if (inboxCRM.activeContact) loadConversationMessages(inboxCRM.activeContact);
+}
+
+// ── Etiquetado ────────────────────────────────────────────────────────────────
+async function setConversationTag(tag) {
+  if (!inboxCRM.activeSession || !inboxCRM.activeContact) return;
+  try {
+    const res = await apiFetch('/api/inbox/tag', {
+      method: 'PUT',
+      body: JSON.stringify({ clientId: inboxCRM.activeSession, fromNumber: inboxCRM.activeContact, tag }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error);
+    showToast(`Etiqueta actualizada: ${tagLabel(tag) || 'Sin etiqueta'}`, 'info');
+    // Actualizar en lista local
+    const contact = inboxCRM.contacts.find(c => c.from_number === inboxCRM.activeContact);
+    if (contact) { contact.tag = tag; renderInboxContacts(); }
+  } catch (err) { showToast('Error: ' + err.message, 'error'); }
+}
+
+async function filterInboxTag(btn, tag) {
+  inboxCRM.tagFilter = tag;
+  document.querySelectorAll('.inbox-tag-filter').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderInboxContacts();
+}
+
+function searchInboxContacts(q) {
+  inboxCRM.searchQ = q;
+  renderInboxContacts();
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function tagLabel(tag) {
+  return { interesado: '⭐ Interesado', seguimiento: '⏰ Seguimiento', noInteresado: '❌ No interesado', cerrado: '✅ Cerrado' }[tag] || '';
+}
+
+function relativeTime(ts) {
+  const diff = Date.now() - new Date(ts).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'ahora';
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
 }
 
 function esc(str) { return String(str || '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c])); }
 
-async function markReplyAsRead(id) {
-  const reply = state.inbox.replies.find(x => x.id === id);
-  if (!reply || reply.is_read) return;
-  try {
-    reply.is_read = 1;
-    state.inbox.unreadCount = Math.max(0, state.inbox.unreadCount - 1);
-    updateInboxBadge();
-    renderInbox();
-    await apiFetch('/api/replies/' + id + '/read', { method: 'PUT' });
-  } catch (e) { console.error(e); }
-}
+// ── Legacy compat (se sigue llamando desde el HTML viejo) ────────────────────
+async function loadInbox() { await refreshInboxSessions(); }
+async function markReplyAsRead() {}
 
-async function markAllRepliesAsRead() {
-  if (state.inbox.unreadCount === 0) return;
-  try {
-    state.inbox.replies.forEach(r => r.is_read = 1);
-    state.inbox.unreadCount = 0;
-    updateInboxBadge();
-    renderInbox();
-    await apiFetch('/api/replies/all/read', { method: 'PUT' });
-  } catch (e) { console.error(e); }
-}
 
 // ── Auth State ─────────────────────────────────────────────────────────────────
 const auth = {
@@ -323,23 +581,57 @@ function initSocket() {
   });
 
   socket.on('reply:new', (replyData) => {
-    // Only process if it belongs to current user's session (superadmin sees all)
     if (auth.user?.role !== 'superadmin' && !state.sessions[replyData.clientId]) return;
 
-    // Play subtle notification sound
-    try { new Audio('data:audio/mp3;base64,//NExAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq').play().catch(() => { }); } catch (e) { }
+    // Sonido de notificación sutil
+    try { new Audio('data:audio/mp3;base64,//NExAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq').play().catch(() => {}); } catch (e) {}
 
+    // Badge global
+    state.inbox = state.inbox || { unreadCount: 0, replies: [] };
     state.inbox.unreadCount++;
-    state.inbox.replies.unshift(replyData);
+    updateInboxBadge(state.inbox.unreadCount);
 
-    updateInboxBadge();
+    const isInboxActive = document.getElementById('page-inbox')?.classList.contains('active');
 
-    // If currently on inbox page, render it
-    if (document.getElementById('page-inbox').classList.contains('active')) {
-      renderInbox();
+    if (isInboxActive) {
+      // Si la sesión del mensaje es la activa, actualizar columna 2
+      if (replyData.clientId === inboxCRM.activeSession) {
+        // Agregar o actualizar contacto en la lista
+        const existing = inboxCRM.contacts.find(c => c.from_number === replyData.from_number);
+        if (existing) {
+          existing.last_message = replyData.message;
+          existing.last_time = replyData.received_at;
+          existing.unread_count = (existing.unread_count || 0) + 1;
+          // Mover al tope
+          inboxCRM.contacts = [existing, ...inboxCRM.contacts.filter(c => c.from_number !== replyData.from_number)];
+        } else {
+          inboxCRM.contacts.unshift({
+            from_number: replyData.from_number,
+            session_id: replyData.clientId,
+            last_message: replyData.message,
+            last_time: replyData.received_at,
+            unread_count: 1,
+            tag: null,
+            cuenta: replyData.cuenta || replyData.from_number,
+          });
+        }
+        renderInboxContacts();
+
+        // Si además este contacto está abierto en col3, añadir burbuja
+        if (inboxCRM.activeContact === replyData.from_number) {
+          appendChatBubble({ direction: 'in', message: replyData.message, ts: replyData.received_at });
+          // Marcar como leído en caliente
+          if (existing) existing.unread_count = 0;
+          apiFetch('/api/replies/all/read', { method: 'PUT' }).catch(() => {});
+        }
+      } else {
+        // Actualizar badge de esa sesión en columna 1
+        refreshInboxSessions();
+      }
     } else {
       showToast('📥 Nuevo mensaje de ' + replyData.from_number, 'success');
     }
+
   });
 
   socket.on('bulk:progress', ({ batchId, batchName, index, total, numero, cuenta, status, error, sessionUsed }) => {
@@ -355,6 +647,18 @@ function initSocket() {
     log('info', `⏳ Esperando ${secs}s antes del siguiente contacto (${index}/${total})`);
   });
 
+  socket.on('bulk:cooling', ({ sessionId, coolMs, index, total }) => {
+    const mins = Math.round(coolMs / 60000);
+    const msg = `🧊 Sesi\u00f3n [${sessionId}] en pausa de enfriamiento (${mins} min) — ${index}/${total} procesados`;
+    log('info', msg);
+    showToast(msg, 'info');
+  });
+
+  socket.on('bulk:daily_limit', ({ sessionId, limit }) => {
+    log('err', `⚠️ Sesi\u00f3n [${sessionId}] alcanz\u00f3 el l\u00edmite diario de ${limit} mensajes`);
+    showToast(`\u26a0\ufe0f [${sessionId}] lleg\u00f3 al l\u00edmite de ${limit} msgs/d\u00eda`, 'error');
+  });
+
   socket.on('bulk:greetings_done', ({ total }) => {
     log('ok', `✅ Saludos emitidos a ${total} hilos. Esperando hasta 7 minutos por respuestas...`);
     showToast(`✅ Saludos emitidos a los ${total} contactos. Pausando flujos a espera de respuesta...`, 'info');
@@ -364,8 +668,20 @@ function initSocket() {
     log('info', `🏁 [${batchName}] Completado: ${sent} enviados, ${errors} errores`);
     showToast(`Lote "${batchName}" completo: ${sent} ok, ${errors} errores`, 'info');
     const btn = document.getElementById('btn-send-bulk');
-    btn.disabled = false; btn.textContent = '🚀 Iniciar Envío Masivo';
+    const btnStop = document.getElementById('btn-stop-bulk');
+    if (btn) { btn.disabled = false; btn.textContent = '🚀 Iniciar Envío Masivo'; }
+    if (btnStop) btnStop.style.display = 'none';
   });
+
+  socket.on('bulk:stopped', ({ batchId, batchName, doneAt, total }) => {
+    log('info', `⏹️ Envío detenido en ${doneAt}/${total} mensajes.`);
+    showToast(`Envío detenido. Se procesaron ${doneAt} de ${total} contactos.`, 'info');
+    const btn = document.getElementById('btn-send-bulk');
+    const btnStop = document.getElementById('btn-stop-bulk');
+    if (btn) { btn.disabled = false; btn.textContent = '🚀 Iniciar Envío Masivo'; }
+    if (btnStop) btnStop.style.display = 'none';
+  });
+
 
   socket.on('report:update', entry => {
     state.liveReports.unshift(entry);
@@ -835,15 +1151,21 @@ document.addEventListener('input', e => {
 
 async function sendBulkXlsx() {
   const clientId = document.getElementById('bulk-session').value;
-  const minDelay = parseInt(document.getElementById('bulk-delay-min')?.value) || 1000;
-  const maxDelay = parseInt(document.getElementById('bulk-delay-max')?.value) || 15000;
+  const minDelay = parseInt(document.getElementById('bulk-delay-min')?.value) || 20;
+  const maxDelay = parseInt(document.getElementById('bulk-delay-max')?.value) || 45;
   const template = document.getElementById('bulk-template').value.trim();
   const batchName = document.getElementById('batch-name').value.trim();
   const warmup = document.getElementById('bulk-warmup')?.checked || false;
+  const dailyLimit   = parseInt(document.getElementById('bulk-daily-limit')?.value)  || 150;
+  const coolingEvery = parseInt(document.getElementById('bulk-cooling-every')?.value) || 30;
+  const coolingSecs  = parseInt(document.getElementById('bulk-cooling-secs')?.value)  || 120;
 
   if (!clientId) { showToast('Selecciona una sesión o rotación', 'error'); return; }
   if (state.xlsxRows.length === 0) { showToast('Carga un archivo XLSX primero', 'error'); return; }
   if (!template) { showToast('La plantilla del mensaje es requerida', 'error'); return; }
+
+  // Advertencia proactiva si el delay es muy bajo
+  if (minDelay < 15 && !confirm(`⚠️ Advertencia: Usas un delay de solo ${minDelay}s, lo cual puede causar bloqueos.\n\n¿Deseas continuar de todas formas?`)) return;
 
   state.bulkTotal = state.xlsxRows.length; state.bulkDone = 0; state.bulkOk = 0; state.bulkFail = 0;
   document.getElementById('prog-ok').textContent = '0';
@@ -852,18 +1174,46 @@ async function sendBulkXlsx() {
   updateBulkProgress();
 
   const btn = document.getElementById('btn-send-bulk');
-  btn.disabled = true; btn.textContent = '⏳ Enviando...';
+  const btnStop = document.getElementById('btn-stop-bulk');
+  btn.disabled = true;
+  btn.textContent = '⏳ Enviando...';
+  if (btnStop) { btnStop.style.display = 'block'; }
 
   const modeLabel = clientId === 'ALL' ? 'rotación' : 'sesión "' + clientId + '"';
   log('info', `🚀 Iniciando envío: ${state.xlsxRows.length} mensajes — ${modeLabel}`);
-  log('info', `⏱️ Retraso aleatorio: ${(minDelay / 1000).toFixed(1)}s – ${(maxDelay / 1000).toFixed(1)}s por mensaje`);
+  log('info', `⏱️ Delay: ${minDelay}s–${maxDelay}s | Límite diario: ${dailyLimit} | Pausa c/${coolingEvery} msgs (${coolingSecs}s)`);
 
   try {
-    await apiPost('/api/send-bulk-xlsx', { rows: state.xlsxRows, clientId, minDelay, maxDelay, template, batchName, warmup });
+    await apiPost('/api/send-bulk-xlsx', { rows: state.xlsxRows, clientId, minDelay, maxDelay, template, batchName, warmup, dailyLimit, coolingEvery, coolingSecs });
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');
     log('err', `❌ ${err.message}`);
-    btn.disabled = false; btn.textContent = '🚀 Iniciar Envío Masivo';
+    btn.disabled = false;
+    btn.textContent = '🚀 Iniciar Envío Masivo';
+    if (btnStop) btnStop.style.display = 'none';
+  }
+}
+
+function updateDelayHint() {
+  const min = parseInt(document.getElementById('bulk-delay-min')?.value) || 20;
+  const max = parseInt(document.getElementById('bulk-delay-max')?.value) || 45;
+  const hint = document.getElementById('delay-hint');
+  const warn = document.getElementById('delay-risk-warn');
+  if (hint) hint.innerHTML = `Cada mensaje espera entre <b>${min}</b> y <b>${max}</b> segundos al azar`;
+  if (warn) warn.style.display = min < 15 ? 'block' : 'none';
+}
+
+async function stopBulkXlsx() {
+  const btnStop = document.getElementById('btn-stop-bulk');
+  if (btnStop) { btnStop.disabled = true; btnStop.textContent = 'Deteniendo…'; }
+  try {
+    await apiPost('/api/send-bulk-xlsx/stop', {});
+    showToast('Detención solicitada. Se terminará el mensaje actual y el proceso se pausará.', 'info');
+    log('info', '⏹️ Detención del envío solicitada por el usuario.');
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    if (btnStop) { btnStop.disabled = false; btnStop.textContent = '⏹ Detener Envío'; }
   }
 }
 
@@ -1415,7 +1765,6 @@ document.addEventListener('input', e => {
 async function startTraining() {
   if (state.trainingRunning) { showToast('Ya hay un entrenamiento en curso', 'error'); return; }
 
-  // Gather selected sessions
   const checks = document.querySelectorAll('#tr-session-list input[type=checkbox]');
   const selectedIds = Array.from(checks).filter(c => c.checked).map(c => c.value);
   if (selectedIds.length < 2) { showToast('Selecciona al menos 2 sesiones', 'error'); return; }
@@ -1424,18 +1773,18 @@ async function startTraining() {
   const msgsMax = parseInt(document.getElementById('tr-msgs-max').value) || 180;
   const delayMin = parseInt(document.getElementById('tr-delay-min').value) * 1000 || 15000;
   const delayMax = parseInt(document.getElementById('tr-delay-max').value) * 1000 || 20000;
+  const maturationHours = parseInt(document.getElementById('tr-maturation')?.value) || 24;
 
   if (msgsMin > msgsMax) { showToast('El mínimo de mensajes no puede superar al máximo', 'error'); return; }
   if (delayMin > delayMax) { showToast('El delay mínimo no puede superar al máximo', 'error'); return; }
 
-  // Random msgs in range
   const messagesPerNumber = Math.floor(Math.random() * (msgsMax - msgsMin + 1)) + msgsMin;
 
   const btn = document.getElementById('btn-training-start');
   btn.disabled = true;
   btn.textContent = '⏳ Iniciando…';
 
-  trLog('info', `🚀 Solicitando entrenamiento: ${selectedIds.length} sesiones, ~${messagesPerNumber} mensajes, delay ${delayMin / 1000}-${delayMax / 1000}s`);
+  trLog('info', `🚀 Solicitando entrenamiento: ${selectedIds.length} sesiones, ~${messagesPerNumber} mensajes, delay ${delayMin / 1000}-${delayMax / 1000}s, maduracíon: ${maturationHours}h`);
 
   try {
     const data = await apiPost('/api/training/start', {
@@ -1443,8 +1792,8 @@ async function startTraining() {
       minDelay: delayMin,
       maxDelay: delayMax,
       sessionIds: selectedIds,
+      maturationHours,
     });
-    // Socket.IO training:start will update the UI
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');
     trLog('err', `❌ ${err.message}`);
