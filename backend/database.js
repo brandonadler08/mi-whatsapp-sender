@@ -113,7 +113,13 @@ async function init() {
     `CREATE INDEX IF NOT EXISTS idx_replies_asesor ON replies(asesor_id)`,
     `ALTER TABLE sessions ADD COLUMN proxy TEXT`,
     `ALTER TABLE sessions ADD COLUMN ai_enabled INTEGER DEFAULT 0`,
-    `ALTER TABLE sessions ADD COLUMN ai_prompt TEXT`
+    `ALTER TABLE sessions ADD COLUMN ai_prompt TEXT`,
+    // Perfil de historial: NULL = sin definir, 0 = número nuevo, 1 = tiene historial
+    `ALTER TABLE sessions ADD COLUMN has_history INTEGER DEFAULT NULL`,
+    // Nivel de envío: 0 = necesita entrenamiento, 1 = nivel 1 (30-50/día), 2 = nivel 2 (80-100/día), 3 = nivel 3 (150+/día)
+    `ALTER TABLE sessions ADD COLUMN history_level INTEGER DEFAULT 0`,
+    // Fecha en que se marcó el historial
+    `ALTER TABLE sessions ADD COLUMN history_set_at TEXT DEFAULT NULL`
   ];
   for (const sql of migrations) {
     try { db.run(sql); } catch (_) { /* column already exists — skip */ }
@@ -370,6 +376,22 @@ const stmts = {
     run(`UPDATE sessions SET proxy = :proxy WHERE client_id = :id`, {
       ':id': clientId, ':proxy': proxy
     });
+  },
+
+  // Actualizar perfil de historial de la sesión
+  updateSessionHistory(clientId, hasHistory, historyLevel) {
+    run(`UPDATE sessions SET has_history = :has, history_level = :lvl, history_set_at = :at WHERE client_id = :id`, {
+      ':id': clientId,
+      ':has': hasHistory ? 1 : 0,
+      ':lvl': historyLevel,
+      ':at': new Date().toISOString()
+    });
+  },
+
+  // Obtener perfil completo de una sesión (para el frontend)
+  getSessionProfile(clientId) {
+    return get(`SELECT client_id, label, has_history, history_level, history_set_at, ai_enabled, proxy, created_at 
+                FROM sessions WHERE client_id = :id`, { ':id': clientId });
   },
 
   deleteSession(clientId) {

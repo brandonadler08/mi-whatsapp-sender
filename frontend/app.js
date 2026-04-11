@@ -388,6 +388,45 @@ const state = {
 
 let socket;
 let qrModalPending = null;
+let historyCheckClientId = null; // sesión pendiente del modal de diagnóstico
+
+// ─── Diagnóstico de historial: acción al seleccionar opción ───────────────────
+async function selectHistoryOption(hasHistory) {
+  const clientId = historyCheckClientId;
+  if (!clientId) return;
+
+  closeModal('modal-history-check');
+  historyCheckClientId = null;
+
+  try {
+    const res = await apiFetch(`/api/sessions/${encodeURIComponent(clientId)}/history`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hasHistory })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+
+    if (!hasHistory) {
+      // Número nuevo → navegar al entrenamiento con la sesión pre-seleccionada
+      showToast('🏋️ Redirigiendo al módulo de entrenamiento...', 'info', 3000);
+      setTimeout(() => {
+        navigate('training');
+        // Pre-marcar la sesión en el selector de entrenamiento si existe
+        const trSess = document.getElementById('tr-session-select') || document.querySelector('#page-training select');
+        if (trSess) {
+          trSess.value = clientId;
+        }
+        showToast(`Inicia el entrenamiento para "${data.label || clientId}" antes de enviar campañas.`, 'info', 6000);
+      }, 800);
+    } else {
+      // Con historial → mostrar límites activos
+      showToast(`✅ Nivel 1 activo: hasta 50 mensajes/día de forma segura`, 'success', 5000);
+    }
+  } catch (err) {
+    showToast('Error al guardar: ' + err.message, 'error');
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // INIT
@@ -766,6 +805,26 @@ function initSocket() {
   // ── Validador: progreso en tiempo real ────────────────────────────────────
   socket.on('validator:progress', (data) => handleValidatorProgress(data));
   socket.on('validator:complete', (data) => handleValidatorComplete(data));
+
+  // ── Diagnóstico de historial ──────────────────────────────────────────────
+  socket.on('session:needs_history_check', ({ clientId, name, phone }) => {
+    // Solo mostrar al admin/superadmin
+    if (auth.user?.role === 'asesor') return;
+    historyCheckClientId = clientId;
+    const nameEl = document.getElementById('history-check-session-name');
+    if (nameEl) nameEl.textContent = `${name || clientId}${phone ? ` (+52${phone})` : ''}`;
+    openModal('modal-history-check');
+  });
+
+  socket.on('session:history_set', ({ clientId, hasHistory, historyLevel, label }) => {
+    showToast(
+      hasHistory
+        ? `✅ ${label || clientId}: Nivel 1 activo (50 msgs/día)`
+        : `🏋️ ${label || clientId}: Entrenamiento requerido`,
+      hasHistory ? 'success' : 'info',
+      5000
+    );
+  });
 }
 
 

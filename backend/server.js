@@ -111,7 +111,24 @@ const loginLimiter = rateLimit({
 // ── Session Manager → Socket.IO ───────────────────────────────────────────────
 sessionManager.on('qr', d => io.emit('session:qr', d));
 sessionManager.on('authenticated', d => io.emit('session:authenticated', d));
-sessionManager.on('ready', d => io.emit('session:ready', d));
+sessionManager.on('ready', d => {
+  io.emit('session:ready', d);
+
+  // Verificar si la sesión ya tiene perfil de historial definido
+  if (dbReady) {
+    const profile = dbModule.stmts.getSessionProfile(d.clientId);
+    if (!profile || profile.has_history === null || profile.has_history === undefined) {
+      // Primera vez que se conecta — preguntar al admin si tiene historial
+      setTimeout(() => {
+        io.emit('session:needs_history_check', {
+          clientId: d.clientId,
+          name: d.name || d.clientId,
+          phone: d.phone,
+        });
+      }, 1500); // pequeño delay para que el frontend procese el session:ready primero
+    }
+  }
+});
 sessionManager.on('disconnected', d => io.emit('session:disconnected', d));
 sessionManager.on('auth_failure', d => io.emit('session:auth_failure', d));
 sessionManager.on('session_removed', d => io.emit('session:removed', d));
@@ -523,6 +540,55 @@ app.post('/api/sessions/:clientId/settings', auth.requireAuth, prohibitAsesor, (
   }
 
   res.json({ success: true, message: 'Configuración guardada. Reinicia la sesión para aplicar cambios de Proxy.' });
+});
+
+// ── Perfil de historial de sesión ─────────────────────────────────────────────
+app.get('/api/sessions/:clientId/profile', auth.requireAuth, prohibitAsesor, (req, res) => {
+  const { clientId } = req.params;
+  if (!dbReady) return res.json({ has_history: null, history_level: 0 });
+  const profile = dbModule.stmts.getSessionProfile(clientId);
+  res.json(profile || { client_id: clientId, has_history: null, history_level: 0 });
+});
+
+// ── Marcar historial de sesión (nuevo vs con historial) ────────────────────────
+app.put('/api/sessions/:clientId/history', auth.requireAuth, prohibitAsesor, (req, res) => {
+  const { clientId } = req.params;
+  const { hasHistory } = req.body; // true = tiene historial, false = número nuevo
+
+  if (typeof hasHistory !== 'boolean')
+    return res.status(400).json({ error: 'hasHistory (boolean) es requerido' });
+
+  if (!dbReady) return res.status(503).json({ error: 'DB no disponible' });
+
+  // Nivel automático según historial
+  // Nuevo (false) → nivel 0 (necesita entrenamiento primero)
+  // Con historial (true) → nivel 1 (permite hasta 50 msgs/día)
+  const historyLevel = hasHistory ? 1 : 0;
+
+  dbModule.stmts.updateSessionHistory(clientId, hasHistory, historyLevel);
+
+  // Actualizar los límites en memoria del trainingLocks si aplica
+  const session = sessionManager.sessions.get(clientId);
+  if (session) {
+    session.hasHistory = hasHistory;
+    session.historyLevel = historyLevel;
+  }
+
+  // Emitir evento para que el frontend se actualice
+  io.emit('session:history_set', {
+    clientId,
+    hasHistory,
+    historyLevel,
+    dailyLimit: hasHistory ? 50 : 0, // 0 = bloqueado para bulk hasta completar entrenamiento
+    label: session?.name || clientId
+  });
+
+  const msg = hasHistory
+    ? `✅ Sesión marcada con historial (Nivel 1: hasta 50 msgs/día)`
+    : `🏋️ Sesión marcada como nueva — se iniciará entrenamiento`;
+
+  console.log(`[History] ${clientId}: ${msg}`);
+  res.json({ success: true, hasHistory, historyLevel, message: msg });
 });
 
 // ── Single send ───────────────────────────────────────────────────────────────
