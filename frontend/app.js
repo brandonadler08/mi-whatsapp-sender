@@ -484,13 +484,13 @@ function applyUserRole() {
   // document.getElementById('nav-proxies').style.display = isAdmin ? '' : 'none';
 
   if (isAsesor) {
-    ['nav-sessions', 'nav-send', 'nav-bulk', 'nav-reports', 'nav-history'].forEach(id => {
+    ['nav-sessions', 'nav-send', 'nav-bulk', 'nav-reports', 'nav-history', 'nav-validator', 'nav-intensity'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
     navigate('inbox');
   } else {
-    ['nav-sessions', 'nav-send', 'nav-bulk', 'nav-reports', 'nav-history'].forEach(id => {
+    ['nav-sessions', 'nav-send', 'nav-bulk', 'nav-reports', 'nav-history', 'nav-validator', 'nav-intensity'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.style.display = '';
     });
@@ -869,7 +869,8 @@ function initSocket() {
 const pageTitles = {
   sessions: 'Sesiones', send: 'Enviar Mensaje', bulk: 'Envío Masivo XLSX',
   reports: 'Envío Activo', history: 'Historial DB', log: 'Registro de Actividad',
-  users: 'Gestión de Usuarios', training: 'Modo Entrenamiento'
+  users: 'Gestión de Usuarios', training: 'Modo Entrenamiento',
+  validator: 'Validador WhatsApp', intensity: 'Modo Intensidad'
 };
 
 function navigate(page) {
