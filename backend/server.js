@@ -603,8 +603,6 @@ function parseSpintax(text) {
   });
 }
 
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-
 app.post('/api/intensity/start', auth.requireAuth, async (req, res) => {
   if (intensityState.running) return res.status(400).json({ error: 'Ya hay un ataque en curso' });
   
