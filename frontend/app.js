@@ -2209,11 +2209,12 @@ async function startIntensity() {
   
   document.getElementById('int-progress-wrap').style.display = 'block';
   document.getElementById('int-progress-bar').style.width = '0%';
-  document.getElementById('int-progress-text').textContent = \`0 / \${count}\`;
+  document.getElementById('int-progress-text').textContent = "0 / " + count;
   document.getElementById('int-sent').textContent = '0';
   document.getElementById('int-errors').textContent = '0';
 
   intLog('info', `🔥 Solicitando Modo Intensidad: ${count} msgs a ${target} usando ${readySessions.length} IPs/Líneas`);
+
 
   try {
     await apiPost('/api/intensity/start', {
