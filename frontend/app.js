@@ -1150,7 +1150,15 @@ async function validateBulk() {
   if (!nums.length) { showToast('Sin números válidos (mín 8 dígitos)', 'error'); return; }
 
   const btn = document.getElementById('btn-val-bulk');
-  btn.disabled = true; btn.textContent = '... Validando ...';
+  const progress = document.getElementById('val-progress-wrap');
+  const bar = document.getElementById('val-progress-bar');
+  const text = document.getElementById('val-progress-text');
+
+  btn.disabled = true; btn.textContent = '⏳ Validando...';
+  if (progress) progress.style.display = 'block';
+  if (bar) bar.style.width = '0%';
+  if (text) text.textContent = `0 / ${nums.length}`;
+
   try {
     const res = await apiFetch('/api/check-numbers', {
       method: 'POST',
@@ -1159,9 +1167,7 @@ async function validateBulk() {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
-    showToast(`Iniciando validación de ${nums.length} números...`, 'info');
-    // Actualizar historial local después de un tiempo o al terminar
-    setTimeout(loadValidationHistory, 5000); 
+    showToast(`Validando ${nums.length} números en segundo plano...`, 'info');
   } catch (err) {
     showToast('Error: ' + err.message, 'error');
     btn.disabled = false; btn.textContent = '🔍 Iniciar Validación Masiva';
@@ -1170,8 +1176,9 @@ async function validateBulk() {
 
 async function loadValidationHistory() {
   try {
-    const data = await apiGet('/api/validations/history');
-    if (data.history) {
+    const res = await apiFetch('/api/validations/history');
+    const data = await res.json();
+    if (res.ok && data.history) {
       renderValidationHistory(data.history);
     }
   } catch (err) {
@@ -1196,30 +1203,6 @@ function renderValidationHistory(history) {
       </tr>
     `;
   }).join('');
-}
-  const progress = document.getElementById('val-progress-wrap');
-  const bar = document.getElementById('val-progress-bar');
-  const text = document.getElementById('val-progress-text');
-  btn.disabled = true; btn.textContent = '⏳ Validando...';
-  progress.style.display = 'block';
-  bar.style.width = '0%';
-  text.textContent = `0 / ${nums.length}`;
-
-  try {
-    // El backend procesa async y emite progreso por socket
-    const res = await apiFetch('/api/check-numbers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clientId, numeros: nums })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    // El progreso llega via eventos socket: validator:progress y validator:complete
-    showToast(`Validando ${nums.length} números en segundo plano...`, 'info');
-  } catch (err) {
-    showToast('Error: ' + err.message, 'error');
-    btn.disabled = false; btn.textContent = '🔍 Iniciar Validación Masiva';
-  }
 }
 
 // Eventos de socket para el validador masivo (inicializados en initSocket)
