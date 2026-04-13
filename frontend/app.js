@@ -456,6 +456,7 @@ function showApp() {
   initSocket();
   initDragDrop();
   initTemplateCharCounter();
+  loadValidationHistory(); // Carga inicial del historial del validador
 }
 
 function applyUserRole() {
@@ -883,6 +884,7 @@ function navigate(page) {
     page === 'sessions' ? `<button class="btn btn-primary" onclick="openAddSessionModal()">＋ Nueva Sesión</button>` :
       page === 'users' ? `<button class="btn btn-primary" onclick="openAddUserModal()">＋ Nuevo Usuario</button>` : '';
   if (page === 'history') loadHistory();
+  if (page === 'validator') loadValidationHistory();
   if (page === 'users') loadUsers();
   if (page === 'inbox') loadInbox();
   if (page === 'proxies') loadProxyStats();
@@ -1148,6 +1150,53 @@ async function validateBulk() {
   if (!nums.length) { showToast('Sin números válidos (mín 8 dígitos)', 'error'); return; }
 
   const btn = document.getElementById('btn-val-bulk');
+  btn.disabled = true; btn.textContent = '... Validando ...';
+  try {
+    const res = await apiFetch('/api/check-numbers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId, numeros: nums })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    showToast(`Iniciando validación de ${nums.length} números...`, 'info');
+    // Actualizar historial local después de un tiempo o al terminar
+    setTimeout(loadValidationHistory, 5000); 
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+    btn.disabled = false; btn.textContent = '🔍 Iniciar Validación Masiva';
+  }
+}
+
+async function loadValidationHistory() {
+  try {
+    const data = await apiGet('/api/validations/history');
+    if (data.history) {
+      renderValidationHistory(data.history);
+    }
+  } catch (err) {
+    console.error('Error cargando historial:', err);
+  }
+}
+
+function renderValidationHistory(history) {
+  const tbody = document.getElementById('val-db-history-tbody');
+  if (!tbody) return;
+  if (!history || history.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:20px;color:var(--text-3)">Sin registros previos</td></tr>';
+    return;
+  }
+  tbody.innerHTML = history.map(h => {
+    const date = new Date(h.timestamp).toLocaleString('es-MX', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+    return `
+      <tr>
+        <td>${esc(h.numero)}</td>
+        <td>${h.has_wa ? '<span style="color:var(--success)">✅</span>' : '<span style="color:var(--danger)">❌</span>'}</td>
+        <td style="color:var(--text-3);font-size:10px">${date}</td>
+      </tr>
+    `;
+  }).join('');
+}
   const progress = document.getElementById('val-progress-wrap');
   const bar = document.getElementById('val-progress-bar');
   const text = document.getElementById('val-progress-text');
@@ -1474,7 +1523,11 @@ async function sendBulkXlsx() {
   log('info', `⏱️ Delay: ${minDelay}s–${maxDelay}s | Límite diario: ${dailyLimit} | Pausa c/${coolingEvery} msgs (${coolingSecs}s)`);
 
   try {
-    await apiPost('/api/send-bulk-xlsx', { rows: state.xlsxRows, clientId, minDelay, maxDelay, template, batchName, warmup, dailyLimit, coolingEvery, coolingSecs });
+    const ignoreTrainingLock = document.getElementById('bulk-ignore-lock')?.checked || false;
+    await apiPost('/api/send-bulk-xlsx', { 
+      rows: state.xlsxRows, clientId, minDelay, maxDelay, template, batchName, warmup, 
+      dailyLimit, coolingEvery, coolingSecs, ignoreTrainingLock 
+    });
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');
     log('err', `❌ ${err.message}`);

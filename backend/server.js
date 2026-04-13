@@ -297,6 +297,7 @@ app.post('/api/check-number', auth.requireAuth, prohibitAsesor, async (req, res)
 
   try {
     const result = await sessionManager.checkNumber(clientId, String(numero).trim());
+    if (dbReady) dbModule.stmts.insertValidation(result);
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -325,12 +326,15 @@ app.post('/api/check-numbers', auth.requireAuth, prohibitAsesor, async (req, res
     for (let i = 0; i < numeros.length; i++) {
       const r = await sessionManager.checkNumber(clientId, String(numeros[i]).trim());
       if (r.exists) withWA++;
-      results.push({ ...r, timestamp: new Date().toISOString() });
+      const valResult = { ...r, timestamp: new Date().toISOString() };
+      results.push(valResult);
+
+      if (dbReady) dbModule.stmts.insertValidation(r);
 
       io.emit('validator:progress', {
         index: i + 1,
         total: numeros.length,
-        result: { ...r, timestamp: new Date().toISOString() }
+        result: valResult
       });
 
       // Delay anti-spam entre 700ms y 1.3s para no saturar WhatsApp
@@ -975,10 +979,11 @@ app.post('/api/send-bulk-xlsx', auth.requireAuth, prohibitAsesor, async (req, re
   // Verificar bloqueo de maduración (entrenamiento en curso o periodo de espera)
   if (!useRotation) {
     const lock = isSessionLocked(clientId);
-    if (lock) {
+    if (lock && !req.body.ignoreTrainingLock) {
       const remH = Math.ceil((lock.unlocksAt - Date.now()) / 3600000);
       return res.status(423).json({
-        error: `🔒 La sesión "${clientId}" está en período de maduración post-entrenamiento (${remH}h restantes). Usa otra sesión o espera a que termine el período.`
+        locked: true,
+        error: `🔒 La sesión "${clientId}" está en período de maduración post-entrenamiento (${remH}h restantes). Usa otra sesión o activa la opción de forzar envío.`
       });
     }
   }
@@ -1682,6 +1687,25 @@ io.on('connection', socket => {
 app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html'));
 });
+
+// ── Validations History Endpoint ───────────────────────────────────
+app.get('/api/validations/history', auth.requireAuth, prohibitAsesor, (req, res) => {
+  if (!dbReady) return res.status(503).json({ error: 'DB no disponible' });
+  const history = dbModule.stmts.getValidationsHistory(1000);
+  res.json({ success: true, history });
+});
+
+// ── Daily Cleanup Routine (90 days) ────────────────────────────────
+function runDailyCleanup() {
+  if (dbReady) {
+    console.log('[Cleanup] 🧹 Iniciando limpieza diaria de registros antiguos...');
+    dbModule.stmts.deleteOldValidations();
+  }
+}
+
+// Ejecutar limpieza al iniciar (con un pequeño delay para asegurar DB) y cada 24h
+setTimeout(runDailyCleanup, 10000);
+setInterval(runDailyCleanup, 24 * 60 * 60 * 1000);
 
 // ── Start ──────────────────────────────────────────────────────────────────────
 (async () => {

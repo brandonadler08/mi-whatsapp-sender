@@ -99,6 +99,15 @@ async function init() {
       session_id TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_proxy_used ON proxy_pool(is_used);
+
+    CREATE TABLE IF NOT EXISTS validations (
+      id         TEXT PRIMARY KEY,
+      numero     TEXT NOT NULL,
+      has_wa     INTEGER DEFAULT 0,
+      jid        TEXT,
+      timestamp  TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_val_timestamp ON validations(timestamp);
   `);
 
   // ── Migrations: add columns if they don't exist (for existing DBs) ──────────
@@ -119,7 +128,10 @@ async function init() {
     // Nivel de envío: 0 = necesita entrenamiento, 1 = nivel 1 (30-50/día), 2 = nivel 2 (80-100/día), 3 = nivel 3 (150+/día)
     `ALTER TABLE sessions ADD COLUMN history_level INTEGER DEFAULT 0`,
     // Fecha en que se marcó el historial
-    `ALTER TABLE sessions ADD COLUMN history_set_at TEXT DEFAULT NULL`
+    `ALTER TABLE sessions ADD COLUMN history_set_at TEXT DEFAULT NULL`,
+    // Tabla de validaciones histórico (por si no se creó arriba en una DB vieja)
+    `CREATE TABLE IF NOT EXISTS validations (id TEXT PRIMARY KEY, numero TEXT, has_wa INTEGER DEFAULT 0, jid TEXT, timestamp TEXT)`,
+    `CREATE INDEX IF NOT EXISTS idx_val_timestamp ON validations(timestamp)`
   ];
   for (const sql of migrations) {
     try { db.run(sql); } catch (_) { /* column already exists — skip */ }
@@ -535,22 +547,42 @@ const stmts = {
     run(`UPDATE replies SET is_read = 1
          WHERE session_id = :session AND from_number = :from AND is_read = 0`,
       { ':session': sessionId, ':from': fromNumber });
-    schedSave();
-  },
 
   // Etiquetar conversación (guarda la etiqueta en el último reply del contacto)
-  tagConversation(sessionId, fromNumber, tag) {
     run(`UPDATE replies SET tag = :tag
          WHERE session_id = :session AND from_number = :from`,
       { ':tag': tag, ':session': sessionId, ':from': fromNumber });
-    schedSave();
-  },
 
   // Eliminar un reply individual
   deleteReply(id) {
     run(`DELETE FROM replies WHERE id = :id`, { ':id': id });
-    schedSave();
   },
+
+  // ── Validations History ────────────────────────────────────────────────────
+  insertValidation(v) {
+    run(`INSERT OR IGNORE INTO validations (id, numero, has_wa, jid, timestamp)
+         VALUES (:id, :numero, :has_wa, :jid, :timestamp)`, {
+      ':id': Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+      ':numero': v.numero,
+      ':has_wa': v.exists ? 1 : 0,
+      ':jid': v.jid || null,
+      ':timestamp': new Date().toISOString()
+    });
+  },
+
+  getValidationsHistory(limit = 1000) {
+    return all(`SELECT * FROM validations ORDER BY timestamp DESC LIMIT :limit`, { ':limit': limit });
+  },
+
+  deleteOldValidations() {
+    // Borrar registros de más de 90 días
+    const countBefore = get(`SELECT COUNT(*) as c FROM validations`)?.c || 0;
+    run(`DELETE FROM validations WHERE timestamp < DATETIME('now', '-90 days')`);
+    const countAfter = get(`SELECT COUNT(*) as c FROM validations`)?.c || 0;
+    const deleted = countBefore - countAfter;
+    if (deleted > 0) console.log(`[DB] 🧹 Limpieza histórica: ${deleted} validaciones antiguas eliminadas.`);
+    return deleted;
+  }
 };
 
 

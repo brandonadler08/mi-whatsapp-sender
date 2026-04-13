@@ -486,18 +486,20 @@
                 </div>
               </div>
 
-              <div class="form-group"
-                style="margin-top: 10px; background: rgba(99, 102, 241, 0.08); border: 1px dashed var(--accent); padding: 12px; border-radius: 8px;">
-                <label style="display:flex;align-items:center;cursor:pointer;gap:8px"
-                  title="Envía saludo dinámico y espera hasta que respondan.">
-                  <input type="checkbox" id="bulk-warmup" checked
-                    style="accent-color:var(--accent);width:18px;height:18px" />
-                  <span style="font-weight: 600; color:var(--text-1);">⚡ Módulo Antibloqueos (Saludo + 7min
-                    Espera)</span>
-                </label>
                 <div class="form-hint" style="margin-left: 26px; margin-top: 4px;">Envía saludo temporalizado ("Buenos
                   días {nombre}"). Se colocará en <b>espera asíncrona</b> por 7 minutos máximo. Si contesta, el mensaje
                   principal se le envía al instante. Esto dilata y asegura que el 100% será orgánico.</div>
+              </div>
+
+              <div class="form-group"
+                style="margin-top: 10px; background: rgba(239, 68, 68, 0.08); border: 1px dashed var(--danger); padding: 12px; border-radius: 8px;">
+                <label style="display:flex;align-items:center;cursor:pointer;gap:8px"
+                  title="Permite enviar mensajes incluso si la sesión está en periodo de maduración (Training Lock).">
+                  <input type="checkbox" id="bulk-ignore-lock"
+                    style="accent-color:var(--danger);width:18px;height:18px" />
+                  <span style="font-weight: 600; color:var(--text-1);">⚠️ Forzar Envío (Ignorar bloqueo de entrenamiento)</span>
+                </label>
+                <div class="form-hint" style="margin-left: 26px; margin-top: 4px;">Usa esta opción solo si necesitas enviar de forma urgente y conoces el riesgo de baneo.</div>
               </div>
 
               <div id="bulk-progress-section" style="display:none;margin-bottom:14px">
@@ -1159,6 +1161,29 @@
               <button class="btn btn-primary" id="btn-val-bulk" onclick="validateBulk()" style="width:100%">
                 🔍 Iniciar Validación Masiva
               </button>
+            </div>
+
+            <!-- Panel de Historial de DB (90 días) -->
+            <div class="card" style="border:1px solid var(--accent)">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                <div class="card-title" style="margin-bottom:0">📂 Historial Guardado (DB)</div>
+                <button class="btn btn-secondary btn-sm" onclick="loadValidationHistory()">🔄 Actualizar</button>
+              </div>
+              <div class="form-hint" style="margin-bottom:12px">Registros de los últimos 90 días guardados automáticamente en el sistema.</div>
+              <div style="max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:8px">
+                <table class="data-table" style="font-size:12px">
+                  <thead style="position:sticky;top:0;background:var(--surface);z-index:10">
+                    <tr>
+                      <th>Número</th>
+                      <th>WA</th>
+                      <th>Fecha</th>
+                    </tr>
+                  </thead>
+                  <tbody id="val-db-history-tbody">
+                    <tr><td colspan="3" style="text-align:center;padding:20px;color:var(--text-3)">Haz clic en actualizar para cargar</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
