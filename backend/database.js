@@ -547,6 +547,7 @@ const stmts = {
     run(`UPDATE replies SET is_read = 1
          WHERE session_id = :session AND from_number = :from AND is_read = 0`,
       { ':session': sessionId, ':from': fromNumber });
+  },
 
   // Etiquetar conversación (guarda la etiqueta en el último reply del contacto)
   setConversationTag(sessionId, fromNumber, tag) {
