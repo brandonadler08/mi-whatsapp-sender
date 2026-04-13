@@ -549,9 +549,11 @@ const stmts = {
       { ':session': sessionId, ':from': fromNumber });
 
   // Etiquetar conversación (guarda la etiqueta en el último reply del contacto)
+  setConversationTag(sessionId, fromNumber, tag) {
     run(`UPDATE replies SET tag = :tag
          WHERE session_id = :session AND from_number = :from`,
       { ':tag': tag, ':session': sessionId, ':from': fromNumber });
+  },
 
   // Eliminar un reply individual
   deleteReply(id) {
