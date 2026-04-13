@@ -463,43 +463,39 @@
               <!-- ── Seguridad avanzada ── -->
               <div class="form-group">
                 <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--text-3);margin-bottom:10px;text-transform:uppercase">🛡️ Protección Anti-Bloqueo</div>
-
                 <div style="display:flex;gap:10px;margin-bottom:10px">
                   <div style="flex:1">
-                    <div class="form-label" style="font-size:10px;margin-bottom:4px">LÍMITE por sesión/día</div>
-                    <input class="form-control" id="bulk-daily-limit" type="number" value="150" min="10" max="1000"
-                      title="Máx mensajes que puede enviar cada número en 24h antes de hacer pausa" />
-                    <div class="form-hint" style="font-size:10px">msgs máx/sesión/día</div>
+                    <div class="form-label" style="font-size:10px;margin-bottom:4px">LÍMITE msg/día</div>
+                    <input class="form-control" id="bulk-daily-limit" type="number" value="150" min="10" max="1000" />
+                    <div class="form-hint" style="font-size:10px">Máximo por sesión</div>
                   </div>
                   <div style="flex:1">
-                    <div class="form-label" style="font-size:10px;margin-bottom:4px">PAUSA cada N msgs</div>
-                    <input class="form-control" id="bulk-cooling-every" type="number" value="30" min="5" max="200"
-                      title="Cada cuántos mensajes la sesión activa descansa" />
-                    <div class="form-hint" style="font-size:10px">msgs antes de enfriar</div>
+                    <div class="form-label" style="font-size:10px;margin-bottom:4px">PAUSA c/ N msgs</div>
+                    <input class="form-control" id="bulk-cooling-every" type="number" value="30" min="5" max="200" />
+                    <div class="form-hint" style="font-size:10px">Enfriamiento</div>
                   </div>
                   <div style="flex:1">
                     <div class="form-label" style="font-size:10px;margin-bottom:4px">DESCANSO (seg)</div>
-                    <input class="form-control" id="bulk-cooling-secs" type="number" value="120" min="30" max="600"
-                      title="Cuántos segundos descansa la sesión durante la pausa" />
-                    <div class="form-hint" style="font-size:10px">seg de pausa/enfriamiento</div>
+                    <input class="form-control" id="bulk-cooling-secs" type="number" value="120" min="30" max="600" />
+                    <div class="form-hint" style="font-size:10px">Segundos pausa</div>
                   </div>
                 </div>
               </div>
 
-                <div class="form-hint" style="margin-left: 26px; margin-top: 4px;">Envía saludo temporalizado ("Buenos
-                  días {nombre}"). Se colocará en <b>espera asíncrona</b> por 7 minutos máximo. Si contesta, el mensaje
-                  principal se le envía al instante. Esto dilata y asegura que el 100% será orgánico.</div>
+              <div class="form-group" style="margin-top: 10px; background: rgba(99, 102, 241, 0.08); border: 1px dashed var(--accent); padding: 12px; border-radius: 8px;">
+                <label style="display:flex;align-items:center;cursor:pointer;gap:8px">
+                  <input type="checkbox" id="bulk-smart-mode" style="accent-color:var(--accent);width:18px;height:18px" />
+                  <span style="font-weight: 600; color:var(--text-1);">💡 Envío Inteligente (Saludo + Espera)</span>
+                </label>
+                <div class="form-hint" style="margin-left: 26px; margin-top: 4px;">Envía saludo, espera respuesta hasta 7 min. Si contesta, envía mensaje principal al instante.</div>
               </div>
 
-              <div class="form-group"
-                style="margin-top: 10px; background: rgba(239, 68, 68, 0.08); border: 1px dashed var(--danger); padding: 12px; border-radius: 8px;">
-                <label style="display:flex;align-items:center;cursor:pointer;gap:8px"
-                  title="Permite enviar mensajes incluso si la sesión está en periodo de maduración (Training Lock).">
-                  <input type="checkbox" id="bulk-ignore-lock"
-                    style="accent-color:var(--danger);width:18px;height:18px" />
-                  <span style="font-weight: 600; color:var(--text-1);">⚠️ Forzar Envío (Ignorar bloqueo de entrenamiento)</span>
+              <div class="form-group" style="margin-top: 10px; background: rgba(239, 68, 68, 0.08); border: 1px dashed var(--danger); padding: 12px; border-radius: 8px;">
+                <label style="display:flex;align-items:center;cursor:pointer;gap:8px">
+                  <input type="checkbox" id="bulk-ignore-lock" style="accent-color:var(--danger);width:18px;height:18px" />
+                  <span style="font-weight: 600; color:var(--text-1);">⚠️ Forzar Envío (Ignorar bloqueo entrenamiento)</span>
                 </label>
-                <div class="form-hint" style="margin-left: 26px; margin-top: 4px;">Usa esta opción solo si necesitas enviar de forma urgente y conoces el riesgo de baneo.</div>
+                <div class="form-hint" style="margin-left: 26px; margin-top: 4px;">Usa esta opción solo si conoces el riesgo de baneo.</div>
               </div>
 
               <div id="bulk-progress-section" style="display:none;margin-bottom:14px">
