@@ -158,6 +158,9 @@
         <button class="nav-item" id="nav-bulk" onclick="navigate('bulk')">
           <span class="icon">🚀</span> Envío Masivo XLSX
         </button>
+        <button class="nav-item" id="nav-intensity" onclick="navigate('intensity')" style="color:var(--danger)">
+          <span class="icon">🔥</span> Modo Intensidad
+        </button>
         <button class="nav-item" id="nav-validator" onclick="navigate('validator')">
           <span class="icon">🔍</span> Validador WhatsApp
         </button>
@@ -275,6 +278,93 @@
             </div>
             <button class="btn btn-primary" id="btn-send-single" onclick="sendSingle()" style="width:100%">✉️
               Enviar</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── INTENSITY MODE ──────────────────────────────────────────────────────── -->
+      <section class="page" id="page-intensity">
+        <div class="section-header">
+          <div>
+            <div class="section-title" style="color:var(--danger)">🔥 Modo Intensidad</div>
+            <div class="section-sub">Ataque focalizado: Se usan TODAS las líneas conectadas para enviar al número destino.</div>
+          </div>
+        </div>
+        
+        <div class="stats-row" style="margin-bottom:20px">
+          <div class="stat-card">
+            <div class="stat-label">Progreso</div>
+            <div class="stat-value" id="int-progress-text">0 / 0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label" style="color:var(--success)">Enviados</div>
+            <div class="stat-value" style="-webkit-text-fill-color:var(--success)" id="int-sent">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label" style="color:var(--danger)">Errores</div>
+            <div class="stat-value" style="-webkit-text-fill-color:var(--danger)" id="int-errors">0</div>
+          </div>
+        </div>
+
+        <div class="bulk-layout">
+          <!-- Configuración -->
+          <div style="display:flex;flex-direction:column;gap:20px">
+            <div class="card" style="border:1px dashed var(--danger)">
+              <div class="card-title">💣 Parámetros del Ataque</div>
+              
+              <div class="form-group">
+                <label class="form-label" for="int-target">Número Objetivo (10 dígitos)</label>
+                <input class="form-control" id="int-target" type="tel" placeholder="5512345678" />
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="int-count">Cantidad Total de Mensajes</label>
+                <input class="form-control" id="int-count" type="number" value="50" min="1" max="1000" />
+                <div class="form-hint">Todas las sesiones conectadas rotarán hasta lograr esta cantidad.</div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="int-msg">Mensaje a Enviar</label>
+                <textarea class="form-control" id="int-msg" rows="4" placeholder="{Hola|Oye|Alerta}, esta es una prueba..."></textarea>
+                <div class="form-hint">Soporta Sintaxis <span style="font-weight:700">Spintax</span>: `{Opcion1|Opcion2}` para que varíe en cada envío.</div>
+              </div>
+
+              <div class="form-group" style="background:var(--surface-2);padding:10px;border-radius:8px">
+                <label class="form-label">Retraso entre disparos (seg)</label>
+                <div style="display:flex;gap:10px;align-items:center">
+                  <input class="form-control" id="int-delay-min" type="number" value="2" min="0" max="60" style="flex:1" />
+                  <span style="color:var(--text-3)">→</span>
+                  <input class="form-control" id="int-delay-max" type="number" value="5" min="0" max="60" style="flex:1" />
+                </div>
+              </div>
+
+              <div style="display:flex;gap:10px">
+                <button class="btn btn-primary" id="btn-int-start" onclick="startIntensity()" style="flex:1;background:var(--danger)">
+                  🔥 Fuego a Discreción
+                </button>
+                <button class="btn btn-secondary" id="btn-int-stop" onclick="stopIntensity()" style="flex:1;display:none">
+                  ⏹ Detener
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Log del ataque en vivo -->
+          <div class="card" style="padding:0;overflow:hidden;border:1px solid rgba(239, 68, 68, 0.3)">
+            <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+              <span class="card-title" style="margin-bottom:0">📡 Radar de Disparos</span>
+              <button class="btn btn-secondary btn-sm" onclick="document.getElementById('intensity-log').innerHTML=''">🗑 Limpiar</button>
+            </div>
+            
+            <div id="int-progress-wrap" style="padding:16px 20px 0;display:none">
+              <div class="progress-bar-wrapper">
+                <div class="progress-bar-fill" id="int-progress-bar" style="background:var(--danger)"></div>
+              </div>
+            </div>
+
+            <div class="progress-log" id="intensity-log" style="height:480px;border:none">
+              <div class="log-entry"><span class="log-info">Esperando inicialización de ráfagas...</span></div>
+            </div>
           </div>
         </div>
       </section>

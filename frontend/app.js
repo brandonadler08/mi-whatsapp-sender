@@ -825,6 +825,40 @@ function initSocket() {
       5000
     );
   });
+
+  // ── Intensity Socket events ──────────────────────────────────────────────────
+  socket.on('intensity:progress', ({ current, total, sessionUrl, message, status, error, target }) => {
+    const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+    document.getElementById('int-progress-bar').style.width = `${pct}%`;
+    document.getElementById('int-progress-text').textContent = `${current} / ${total}`;
+    
+    if (status === 'sent') {
+      const e = document.getElementById('int-sent');
+      e.textContent = parseInt(e.textContent) + 1;
+      intLog('ok', `✅ [Línea: ${sessionUrl}] → [${target}]: "${esc(message).slice(0,60)}..."`);
+    } else {
+      const e = document.getElementById('int-errors');
+      e.textContent = parseInt(e.textContent) + 1;
+      intLog('err', `❌ [Línea: ${sessionUrl}] falló: ${error || 'Desconocido'}`);
+    }
+  });
+
+  socket.on('intensity:waiting', ({ delayMs, sessionUrl }) => {
+    intLog('info', `⏳ Esperando ${(delayMs / 1000).toFixed(1)}s (Próximo disparo: ${sessionUrl})`);
+  });
+
+  socket.on('intensity:complete', ({ total, sent, errors, forcedStop }) => {
+    document.getElementById('int-progress-bar').style.width = '100%';
+    document.getElementById('int-progress-text').textContent = forcedStop ? `Detenido (${total})` : `${total} / ${total}`;
+    document.getElementById('btn-int-start').style.display = '';
+    document.getElementById('btn-int-stop').style.display = 'none';
+    document.getElementById('btn-int-start').disabled = false;
+    document.getElementById('btn-int-start').textContent = '🔥 Fuego a Discreción';
+    
+    intLog('ok', forcedStop ? `🛑 Ráfaga detenida. (${sent} enviados, ${errors} errores)` : `🏁 ¡Ataque completado con ${sent} enviados y ${errors} errores!`);
+    showToast(forcedStop ? 'Intensidad detenida' : 'Intensidad completada', forcedStop ? 'info' : 'success');
+  });
+
 }
 
 
@@ -1175,6 +1209,12 @@ function updateValidatorStats() {
   document.getElementById('val-ok').textContent   = ok;
   document.getElementById('val-fail').textContent  = no;
   document.getElementById('val-rate').textContent  = validatorResults.length > 0 ? `${Math.round((ok / validatorResults.length) * 100)}%` : '—';
+  
+  // Mostrar exportable dinámicamente si hay datos
+  const exportBtn = document.getElementById('btn-export-validator');
+  if (exportBtn) {
+    exportBtn.style.display = validatorResults.length > 0 ? '' : 'none';
+  }
 }
 
 function renderValidatorTable() {
@@ -2134,4 +2174,76 @@ function formatEta(seconds) {
   if (h > 0) return `${h}h ${m}m`;
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INTENSITY MODE
+// ═══════════════════════════════════════════════════════════════════════════════
+function intLog(type, msg) {
+  const c = document.getElementById('intensity-log');
+  if (!c) return;
+  const d = document.createElement('div'); d.className = 'log-entry';
+  d.innerHTML = `<span class="log-time">${now()}</span><span class="log-${type}">${esc(msg)}</span>`;
+  c.appendChild(d); c.scrollTop = c.scrollHeight;
+}
+
+async function startIntensity() {
+  const target = document.getElementById('int-target').value.trim();
+  const count = parseInt(document.getElementById('int-count').value);
+  const message = document.getElementById('int-msg').value.trim();
+  const delayMin = parseInt(document.getElementById('int-delay-min').value) || 0;
+  const delayMax = parseInt(document.getElementById('int-delay-max').value) || 0;
+
+  if (!target || target.length !== 10) return showToast('Ingresa un número objetivo válido de 10 dígitos', 'error');
+  if (!count || count < 1) return showToast('La cantidad debe ser mayor a 0', 'error');
+  if (!message) return showToast('Debes ingresar un mensaje', 'error');
+  if (delayMin > delayMax) return showToast('El delay mínimo no puede ser mayor al máximo', 'error');
+
+  const readySessions = Object.values(state.sessions).filter(s => s.status === 'ready');
+  if (readySessions.length === 0) return showToast('No hay sesiones conectadas disponibles para el ataque', 'error');
+
+  const btn = document.getElementById('btn-int-start');
+  const btnStop = document.getElementById('btn-int-stop');
+  btn.disabled = true;
+  btn.textContent = '🚀 Iniciando Ataque...';
+  
+  document.getElementById('int-progress-wrap').style.display = 'block';
+  document.getElementById('int-progress-bar').style.width = '0%';
+  document.getElementById('int-progress-text').textContent = \`0 / \${count}\`;
+  document.getElementById('int-sent').textContent = '0';
+  document.getElementById('int-errors').textContent = '0';
+
+  intLog('info', `🔥 Solicitando Modo Intensidad: ${count} msgs a ${target} usando ${readySessions.length} IPs/Líneas`);
+
+  try {
+    await apiPost('/api/intensity/start', {
+      targetNumber: target,
+      message: message,
+      count: count,
+      delayMinMs: delayMin * 1000,
+      delayMaxMs: delayMax * 1000
+    });
+    btn.style.display = 'none';
+    btnStop.style.display = '';
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+    intLog('err', `❌ Error fatal empezando: ${err.message}`);
+    btn.disabled = false;
+    btn.textContent = '🔥 Fuego a Discreción';
+  }
+}
+
+async function stopIntensity() {
+  const btnStop = document.getElementById('btn-int-stop');
+  btnStop.disabled = true;
+  btnStop.textContent = 'Deteniendo...';
+  try {
+    await apiPost('/api/intensity/stop', {});
+    intLog('info', '🛑 Solicitud de freno enviada...');
+  } catch (err) {
+    showToast(`Error al detener: ${err.message}`, 'error');
+  } finally {
+    btnStop.disabled = false;
+    btnStop.textContent = '⏹ Detener';
+  }
 }

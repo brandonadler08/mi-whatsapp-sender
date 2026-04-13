@@ -591,6 +591,93 @@ app.put('/api/sessions/:clientId/history', auth.requireAuth, prohibitAsesor, (re
   res.json({ success: true, hasHistory, historyLevel, message: msg });
 });
 
+// ── Modo Intensidad (Ataque a 1 número) ────────────────────────────────────────
+const intensityState = { running: false, stopped: false };
+
+function parseSpintax(text) {
+  if (!text) return '';
+  const regex = /\{([^{}]+)\}/g;
+  return text.replace(regex, (match, contents) => {
+    const choices = contents.split('|');
+    return choices[Math.floor(Math.random() * choices.length)];
+  });
+}
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+app.post('/api/intensity/start', auth.requireAuth, async (req, res) => {
+  if (intensityState.running) return res.status(400).json({ error: 'Ya hay un ataque en curso' });
+  
+  const { targetNumber, message, count, delayMinMs, delayMaxMs } = req.body;
+  if (!targetNumber || !count || !message) return res.status(400).json({ error: 'Faltan parámetros' });
+
+  // Agarrar las URLs (ids) de las sesiones ready
+  const activeSessions = [];
+  for (const [clientId, session] of sessionManager.sessions.entries()) {
+    if (session.status === 'ready' && session.sock) {
+      activeSessions.push(clientId);
+    }
+  }
+
+  if (activeSessions.length === 0) return res.status(400).json({ error: 'No hay sesiones conectadas' });
+
+  intensityState.running = true;
+  intensityState.stopped = false;
+  let sent = 0;
+  let errors = 0;
+
+  res.json({ success: true, message: 'Ataque iniciado' });
+
+  // Ejecutar bucle en background
+  (async () => {
+    let sessionIndex = 0;
+
+    for (let i = 0; i < count; i++) {
+      if (intensityState.stopped) break;
+
+      const sid = activeSessions[sessionIndex];
+      const sess = sessionManager.sessions.get(sid);
+      sessionIndex = (sessionIndex + 1) % activeSessions.length; // Rotación Round-Robin
+
+      const msg = parseSpintax(message);
+
+      try {
+        if (!sess || !sess.sock) throw new Error("Sesión desconectada durante ráfaga");
+        const jid = targetNumber + '@s.whatsapp.net';
+        await sess.sock.sendMessage(jid, { text: msg });
+        
+        sent++;
+        io.emit('intensity:progress', {
+          current: i + 1, total: count, sessionUrl: sid, target: targetNumber, message: msg, status: 'sent'
+        });
+      } catch (err) {
+        errors++;
+        io.emit('intensity:progress', {
+          current: i + 1, total: count, sessionUrl: sid, target: targetNumber, message: msg, status: 'error', error: err.message
+        });
+      }
+
+      // Delay
+      if (i < count - 1 && !intensityState.stopped) {
+        const delay = Math.floor(Math.random() * (delayMaxMs - delayMinMs + 1)) + delayMinMs;
+        if (delay > 0) {
+          io.emit('intensity:waiting', { delayMs: delay, sessionUrl: activeSessions[sessionIndex] });
+          await sleep(delay);
+        }
+      }
+    }
+
+    intensityState.running = false;
+    io.emit('intensity:complete', { total: count, sent, errors, forcedStop: intensityState.stopped });
+  })();
+});
+
+app.post('/api/intensity/stop', auth.requireAuth, (req, res) => {
+  if (!intensityState.running) return res.status(400).json({ error: 'No hay ataque en curso' });
+  intensityState.stopped = true;
+  res.json({ success: true });
+});
+
 // ── Single send ───────────────────────────────────────────────────────────────
 app.post('/api/send', auth.requireAuth, async (req, res) => {
   const { clientId, to, message } = req.body;
