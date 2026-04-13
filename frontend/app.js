@@ -1934,69 +1934,88 @@ function now() { return new Date().toLocaleTimeString('es-MX', { hour: '2-digit'
 state.trainingRunning = false;
 
 function renderTrainingSessions() {
-  const container = document.getElementById('tr-session-list');
-  if (!container) return;
+  try {
+    const container = document.getElementById('tr-session-list');
+    if (!container) return;
 
-  const all = Object.values(state.sessions);
-  const ready = all.filter(s => s.status === 'ready');
+    const all = Object.values(state.sessions || {});
+    const ready = all.filter(s => s && s.status === 'ready');
 
-  // Update sessions stat card
-  const statEl = document.getElementById('tr-sessions');
-  if (statEl) {
-    statEl.textContent = ready.length > 0 ? `${ready.length} conectores` : (all.length > 0 ? `0 / ${all.length}` : '—');
-    statEl.style.color = ready.length > 0 ? 'var(--accent)' : 'var(--text-3)';
-  }
+    // Update sessions stat card
+    const statEl = document.getElementById('tr-sessions');
+    if (statEl) {
+      statEl.textContent = ready.length > 0 ? `${ready.length} conectores` : (all.length > 0 ? `0 / ${all.length}` : '—');
+      statEl.style.color = ready.length > 0 ? 'var(--accent)' : 'var(--text-3)';
+    }
 
-  container.innerHTML = '';
+    if (all.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-3);font-size:13px;padding:8px">No hay sesiones en el sistema. <br>Crea una en la sección <b>Sesiones</b> y escanea el QR.</div>';
+      return;
+    }
 
-  if (all.length === 0) {
-    container.innerHTML = '<div style="color:var(--text-3);font-size:13px;padding:8px">No hay sesiones en el sistema. <br>Crea una en la sección <b>Sesiones</b> y escanea el QR.</div>';
-    return;
-  }
+    const statusLabel = {
+      ready: { text: '✅ Conectado', color: 'var(--success)', bg: 'rgba(16,185,129,.12)' },
+      initializing: { text: '⚙️ Iniciando', color: 'var(--warning)', bg: 'rgba(245,158,11,.1)' },
+      qr_pending: { text: '📷 QR Pendiente', color: 'var(--warning)', bg: 'rgba(245,158,11,.1)' },
+      authenticated: { text: '🔐 Autenticado', color: 'var(--accent)', bg: 'rgba(99,102,241,.1)' },
+      disconnected: { text: '❌ Desconectado', color: 'var(--danger)', bg: 'rgba(239,68,68,.1)' },
+      auth_failure: { text: '🚫 Error Auth', color: 'var(--danger)', bg: 'rgba(239,68,68,.1)' },
+    };
 
-  const statusLabel = {
-    ready: { text: '✅ Conectado', color: 'var(--success)', bg: 'rgba(16,185,129,.12)' },
-    initializing: { text: '⚙️ Iniciando', color: 'var(--warning)', bg: 'rgba(245,158,11,.1)' },
-    qr_pending: { text: '📷 QR Pendiente', color: 'var(--warning)', bg: 'rgba(245,158,11,.1)' },
-    authenticated: { text: '🔐 Autenticado', color: 'var(--accent)', bg: 'rgba(99,102,241,.1)' },
-    disconnected: { text: '❌ Desconectado', color: 'var(--danger)', bg: 'rgba(239,68,68,.1)' },
-    auth_failure: { text: '🚫 Error Auth', color: 'var(--danger)', bg: 'rgba(239,68,68,.1)' },
-  };
+    // Preservar estado anterior de los checkboxes si los había
+    const checked = new Set(
+      Array.from(container.querySelectorAll('input[type=checkbox]:checked'))
+        .map(cb => cb.value)
+    );
+    const hasPreviousDOM = container.querySelector('input[type=checkbox]') !== null;
 
-  const sorted = [...all].sort((a, b) => {
-    if (a.status === 'ready' && b.status !== 'ready') return -1;
-    if (a.status !== 'ready' && b.status === 'ready') return 1;
-    return (a.name || a.clientId).localeCompare(b.name || b.clientId);
-  });
+    const sorted = [...all].sort((a, b) => {
+      if (a.status === 'ready' && b.status !== 'ready') return -1;
+      if (a.status !== 'ready' && b.status === 'ready') return 1;
+      return String(a.name || a.clientId || '').localeCompare(String(b.name || b.clientId || ''));
+    });
 
-  sorted.forEach(s => {
-    const isReady = s.status === 'ready';
-    const sl = statusLabel[s.status] || { text: s.status, color: 'var(--text-3)', bg: 'rgba(255,255,255,.05)' };
-    
-    const div = document.createElement('div');
-    div.style.cssText = `display:flex;align-items:center;gap:12px;padding:10px 14px;
-      background:var(--surface-2);border-radius:10px;
-      border:1px solid ${isReady ? 'rgba(99,102,241,.2)' : 'rgba(255,255,255,.05)'};
-      opacity:${isReady ? '1' : '0.6'};margin-bottom:4px`;
+    container.innerHTML = '';
 
-    div.innerHTML = `
-      <input type="checkbox" value="${esc(s.clientId)}" id="chk-${esc(s.clientId)}"
-        ${isReady ? 'checked' : 'disabled'}
-        style="width:18px;height:18px;accent-color:var(--accent);cursor:${isReady ? 'pointer' : 'default'}" />
-      <label for="chk-${esc(s.clientId)}" style="flex:1;cursor:${isReady ? 'pointer' : 'default'};min-width:0">
-        <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-1)">${esc(s.name || s.clientId)}</div>
-        <div style="color:var(--text-3);font-size:11px">${s.phone ? '+52' + esc(s.phone) : esc(s.clientId)}</div>
-      </label>
-      <span style="font-size:10px;font-weight:600;padding:3px 10px;background:${sl.bg};color:${sl.color};border-radius:6px;text-transform:uppercase">${sl.text}</span>
-    `;
-    container.appendChild(div);
-  });
+    sorted.forEach(s => {
+      if (!s || !s.clientId) return;
+      
+      const isReady = s.status === 'ready';
+      const sl = statusLabel[s.status] || { text: s.status || 'Desc.', color: 'var(--text-3)', bg: 'rgba(255,255,255,.05)' };
+      
+      // Si la tabla ya tenía datos antes, conservamos el check si el usuario lo marcó.
+      // Si se está dibujando por primera vez, las ready salen marcadas por defecto.
+      const isChecked = hasPreviousDOM ? checked.has(s.clientId) : isReady;
+      
+      const div = document.createElement('div');
+      div.style.cssText = `display:flex;align-items:center;gap:12px;padding:10px 14px;
+        background:var(--surface-2);border-radius:10px;
+        border:1px solid ${isReady ? 'rgba(99,102,241,.2)' : 'rgba(255,255,255,.05)'};
+        opacity:${isReady ? '1' : '0.6'};margin-bottom:4px`;
 
-  if (ready.length === 0) {
-    const warn = document.createElement('div');
-    warn.style.cssText = 'color:var(--warning);font-size:12px;margin-top:8px;padding:0 4px';
-    warn.innerHTML = '⚠️ Conecta tus números para poder iniciar el entrenamiento.';
-    container.appendChild(warn);
+      div.innerHTML = `
+        <input type="checkbox" value="${esc(s.clientId)}" id="chk-${esc(s.clientId)}"
+          ${isChecked && isReady ? 'checked' : ''} ${isReady ? '' : 'disabled'}
+          style="width:18px;height:18px;accent-color:var(--accent);cursor:${isReady ? 'pointer' : 'default'}" />
+        <label for="chk-${esc(s.clientId)}" style="flex:1;cursor:${isReady ? 'pointer' : 'default'};min-width:0">
+          <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-1)">${esc(s.name || s.clientId)}</div>
+          <div style="color:var(--text-3);font-size:11px">${s.phone ? '+52' + esc(s.phone) : esc(s.clientId)}</div>
+        </label>
+        <span style="font-size:10px;font-weight:600;padding:3px 10px;background:${sl.bg};color:${sl.color};border-radius:6px;text-transform:uppercase">${sl.text}</span>
+      `;
+      container.appendChild(div);
+    });
+
+    if (ready.length === 0) {
+      const warn = document.createElement('div');
+      warn.style.cssText = 'color:var(--warning);font-size:12px;margin-top:8px;padding:0 4px';
+      warn.innerHTML = '⚠️ Conecta tus números para poder iniciar el entrenamiento.';
+      container.appendChild(warn);
+    }
+  } catch (err) {
+    console.error("Error rendering training sessions: ", err);
+    const container = document.getElementById('tr-session-list');
+    if (container) container.innerHTML = `<div style="color:var(--danger);font-size:12px">Error cargando dispositivos: ${err.message}. Refresca la página.</div>`;
   }
 }
 
