@@ -1050,6 +1050,13 @@ function populateSessionSelects() {
       info.style.color = 'var(--text-3)';
     }
   }
+
+  // ── FIX PERMANENTE: siempre sincronizar la lista del modo entrenamiento ──
+  // Se llama aquí porque populateSessionSelects() se ejecuta en CADA cambio de
+  // estado de sesión (connect/disconnect), garantizando que la lista siempre
+  // refleje los dispositivos actualmente conectados sin necesidad de navegar
+  // manualmente a la pestaña de Entrenamiento.
+  renderTrainingSessions();
 }
 
 // ── Helper: obtener primera sesión ready ───────────────────────────────────
