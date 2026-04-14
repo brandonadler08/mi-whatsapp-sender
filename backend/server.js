@@ -175,7 +175,7 @@ async function executePayload(numero, isReply) {
   if (!job) return;
 
   pendingPayloads.delete(numero);
-  clearTimeout(job.timeoutId);
+  if (job.timerId) clearTimeout(job.timerId);
 
   const { batchId, sessionClientId, mensajeFinal, entry } = job;
   const batch = activeBatches.get(batchId);
@@ -1039,18 +1039,6 @@ app.post('/api/send-bulk-xlsx', auth.requireAuth, prohibitAsesor, async (req, re
           checkBatchComplete(batchId);
           continue;
         }
-      }
-
-      // ── Verificar bloqueo de entrenamiento ──
-      const lock = isSessionLocked(session.clientId);
-      if (lock && !ignoreTrainingLock) {
-        const entry = makeEntry(batchId, row, mensajeFinal, session.name || session.clientId, 'error', `Sesión en maduración (${Math.ceil((lock.unlocksAt - Date.now()) / 60000)} min restantes)`);
-        addReport(entry);
-        const batch = activeBatches.get(batchId);
-        if (batch) { batch.errors++; batch.done++; checkBatchComplete(batchId); }
-        continue;
-      } else if (lock && ignoreTrainingLock) {
-        console.log(`[Bulk ${batchId}] ⚠️ Ignorando bloqueo de entrenamiento para ${session.clientId}`);
       }
 
       // ── Actualizar contadores por sesión ──
