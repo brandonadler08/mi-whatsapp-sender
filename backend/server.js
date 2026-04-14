@@ -953,10 +953,10 @@ app.post('/api/parse-xlsx', auth.requireAuth, prohibitAsesor, upload.single('fil
 });
 
 app.post('/api/send-bulk-xlsx', auth.requireAuth, prohibitAsesor, async (req, res) => {
-  const { name, template, delayMin, delayMax, clientId, warmup, coolEvery, coolMs, maxPerDay, ignoreLock, imageKey } = req.body;
+  const { name, template, delayMin, delayMax, clientId, warmup, coolingEvery, coolingSecs, dailyLimit, ignoreTrainingLock, imageKey } = req.body;
   const rows = JSON.parse(req.body.rows || '[]');
 
-  if (bulkState.running && !ignoreLock) {
+  if (bulkState.running && !ignoreTrainingLock) {
     return res.status(409).json({ error: 'Ya hay un envío masivo en curso' });
   }
 
@@ -973,8 +973,9 @@ app.post('/api/send-bulk-xlsx', auth.requireAuth, prohibitAsesor, async (req, re
   const batchId = genId();
   const dMin = parseInt(delayMin) || 3000;
   const dMax = parseInt(delayMax) || 7000;
-  const coolEveryNum = parseInt(coolEvery) || 100;
-  const coolMsNum = parseInt(coolMs) || 60000;
+  const coolEveryNum = parseInt(coolingEvery) || 30;
+  const coolMsNum = (parseInt(coolingSecs) || 60) * 1000;
+  const dailyLimitNum = parseInt(dailyLimit) || 150;
 
   activeBatches.set(batchId, {
     id: batchId, name, total: rows.length, done: 0, sent: 0, errors: 0,
@@ -1040,6 +1041,18 @@ app.post('/api/send-bulk-xlsx', auth.requireAuth, prohibitAsesor, async (req, re
         }
       }
 
+      // ── Verificar bloqueo de entrenamiento ──
+      const lock = isSessionLocked(session.clientId);
+      if (lock && !ignoreTrainingLock) {
+        const entry = makeEntry(batchId, row, mensajeFinal, session.name || session.clientId, 'error', `Sesión en maduración (${Math.ceil((lock.unlocksAt - Date.now()) / 60000)} min restantes)`);
+        addReport(entry);
+        const batch = activeBatches.get(batchId);
+        if (batch) { batch.errors++; batch.done++; checkBatchComplete(batchId); }
+        continue;
+      } else if (lock && ignoreTrainingLock) {
+        console.log(`[Bulk ${batchId}] ⚠️ Ignorando bloqueo de entrenamiento para ${session.clientId}`);
+      }
+
       // ── Actualizar contadores por sesión ──
       const sid = session.clientId || session.name;
       if (!sessionCounters[sid]) sessionCounters[sid] = { today: 0, sinceCooling: 0 };
@@ -1047,18 +1060,18 @@ app.post('/api/send-bulk-xlsx', auth.requireAuth, prohibitAsesor, async (req, re
       sessionCounters[sid].sinceCooling++;
 
       // ── Pausa de enfriamiento ──
-      if (sessionCounters[sid].sinceCooling >= coolEvery) {
+      if (sessionCounters[sid].sinceCooling >= coolEveryNum) {
         sessionCounters[sid].sinceCooling = 0;
-        const coolMin = Math.round(coolMs / 60000);
-        console.log(`[Bulk ${batchId}] 🧐 Sesión ${sid} enfriándose ${coolMin}min después de ${coolEvery} mensajes`);
-        io.emit('bulk:cooling', { batchId, sessionId: sid, coolMs, index: i + 1, total: rows.length });
-        await sleep(coolMs);
+        const coolMin = Math.round(coolMsNum / 60000);
+        console.log(`[Bulk ${batchId}] 🧐 Sesión ${sid} enfriándose ${coolMin}min después de ${coolEveryNum} mensajes`);
+        io.emit('bulk:cooling', { batchId, sessionId: sid, coolMs: coolMsNum, index: i + 1, total: rows.length });
+        await sleep(coolMsNum);
       }
 
       // ── Advertencia de límite diario ──
-      if (sessionCounters[sid].today >= maxPerDay) {
-        console.warn(`[Bulk ${batchId}] ⚠️ Sesión ${sid} alcanzó el límite de ${maxPerDay} msgs/día`);
-        io.emit('bulk:daily_limit', { batchId, sessionId: sid, limit: maxPerDay });
+      if (sessionCounters[sid].today >= dailyLimitNum) {
+        console.warn(`[Bulk ${batchId}] ⚠️ Sesión ${sid} alcanzó el límite de ${dailyLimitNum} msgs/día`);
+        io.emit('bulk:daily_limit', { batchId, sessionId: sid, limit: dailyLimitNum });
       }
 
       const entry = makeEntry(batchId, row, mensajeFinal, session.name || session.clientId, 'pending', null);
