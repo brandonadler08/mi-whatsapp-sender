@@ -195,22 +195,23 @@ class SessionManager extends EventEmitter {
 
     if (localN.length !== 10) throw new Error(`Número inválido (no tiene 10 dígitos)`);
 
-    const variations = [`52${localN}@s.whatsapp.net`, `521${localN}@s.whatsapp.net`];
+    // MÉXICO: El formato para celulares modernos es 521, por lo que debe ser la primera opción
+    // y el valor por defecto si onWhatsApp falla silenciosamente.
+    const variations = [`521${localN}@s.whatsapp.net`, `52${localN}@s.whatsapp.net`];
     let jid = variations[0];
 
     // Verificar si existe en WA usando onWhatsApp de Baileys
     try {
-      console.log(`[${clientId}] Intentando resolver JID para: ${to} (Varios: ${variations.join(', ')})`);
+      console.log(`[${clientId}] Resolviendo JID para: ${to}`);
       for (let v of variations) {
         const lookup = await session.sock.onWhatsApp(v);
         if (lookup && lookup.length > 0 && lookup[0].exists) {
           jid = lookup[0].jid;
-          console.log(`[${clientId}] JID resuelto con éxito: ${jid}`);
           break;
         }
       }
     } catch (err) {
-      console.warn(`[${clientId}] Error resolviendo JID para ${to}: ${err.message}. Usando default: ${jid}`);
+      console.warn(`[${clientId}] Error resolviendo JID, usando default: ${jid}`);
     }
 
     // --- Mejora Anti-Bloqueo: Simular Escritura ---

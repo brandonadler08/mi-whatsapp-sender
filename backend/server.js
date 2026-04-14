@@ -156,12 +156,6 @@ async function executePayload(numero, isReply) {
     // Simular latencia humana al responder (2 - 4.5 segundos)
     await new Promise(r => setTimeout(r, 2000 + Math.random() * 2500));
 
-    // --- Mejora Anti-Bloqueo: Simular Visto antes de enviar principal ---
-    try {
-      await sessionManager.readMessages(sessionClientId, `${numero}@s.whatsapp.net`, []);
-      await new Promise(r => setTimeout(r, 1000 + Math.random() * 2000));
-    } catch (e) { }
-
     await sessionManager.sendMessage(sessionClientId, numero, mensajeFinal);
     entry.status = 'sent';
     entry.timestamp = new Date().toISOString();
