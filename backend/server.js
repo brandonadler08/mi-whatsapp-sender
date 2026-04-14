@@ -60,6 +60,18 @@ const sessionManager = new SessionManager();
 const liveReports = [];
 let rrIndex = 0;
 
+function getNextReadySession(user) {
+  let sessions = sessionManager.getSessions().filter(s => s.status === 'ready');
+  if (dbReady && user && user.role !== 'superadmin') {
+    const ownedIds = dbModule.stmts.getSessionsByOwner(user.id).map(s => s.client_id);
+    sessions = sessions.filter(s => ownedIds.includes(s.clientId));
+  }
+  if (sessions.length === 0) return null;
+  const next = sessions[rrIndex % sessions.length];
+  rrIndex++;
+  return next;
+}
+
 // ── Control de procesos activos ────────────────────────────────────────────────
 const bulkState = { running: false, batchId: null, stopRequested: false };
 
@@ -1001,8 +1013,8 @@ app.post('/api/send-bulk-xlsx', auth.requireAuth, prohibitAsesor, async (req, re
       const mensajeFinal = applySpintax(applyTemplate(template, row));
       let session = null;
 
-      if (clientId === 'round-robin') {
-        session = getNextReadySession(req.user.id);
+      if (clientId === 'ALL') {
+        session = getNextReadySession(req.user);
         if (!session) {
           const entry = makeEntry(batchId, row, mensajeFinal, 'RR', 'error', 'No hay sesiones listas');
           addReport(entry);
