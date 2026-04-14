@@ -805,6 +805,11 @@ function initSocket() {
 
   // ── Validador: progreso en tiempo real ────────────────────────────────────
   socket.on('validator:progress', (data) => handleValidatorProgress(data));
+  socket.on('validator:cooling', ({ index, total, seconds }) => {
+    const msg = `🧊 Pausa de seguridad: ${seconds}s tras ${index}/${total} validaciones`;
+    log('info', msg);
+    showToast(msg, 'info');
+  });
   socket.on('validator:complete', (data) => handleValidatorComplete(data));
 
   // ── Diagnóstico de historial ──────────────────────────────────────────────
@@ -1478,7 +1483,7 @@ async function sendBulkXlsx() {
   const maxDelay = parseInt(document.getElementById('bulk-delay-max')?.value) || 45;
   const template = document.getElementById('bulk-template').value.trim();
   const batchName = document.getElementById('batch-name').value.trim();
-  const warmup = document.getElementById('bulk-warmup')?.checked || false;
+  const warmup = document.getElementById('bulk-smart-mode')?.checked || false;
   const dailyLimit   = parseInt(document.getElementById('bulk-daily-limit')?.value)  || 150;
   const coolingEvery = parseInt(document.getElementById('bulk-cooling-every')?.value) || 30;
   const coolingSecs  = parseInt(document.getElementById('bulk-cooling-secs')?.value)  || 120;
