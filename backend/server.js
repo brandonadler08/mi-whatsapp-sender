@@ -911,9 +911,20 @@ app.post('/api/parse-xlsx', auth.requireAuth, prohibitAsesor, upload.single('fil
     const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const raw = XLSX.utils.sheet_to_json(ws, { defval: '' });
-
     if (raw.length === 0) return res.status(422).json({ error: 'El archivo está vacío' });
-    res.json(raw);
+
+    // Filtrar filas válidas y extraer columnas de variables
+    const rows = raw.filter(r => r.numero);
+    const allCols = raw.length > 0 ? Object.keys(raw[0]) : [];
+    const variableCols = allCols.filter(c => !['numero', 'cuenta'].includes(c.toLowerCase()));
+
+    res.json({
+      rows,
+      total: rows.length,
+      skipped: raw.length - rows.length,
+      variableCols,
+      errors: []
+    });
   } catch (err) {
     res.status(500).json({ error: 'Error al procesar XLSX: ' + err.message });
   }
