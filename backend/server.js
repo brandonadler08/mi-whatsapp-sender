@@ -913,10 +913,20 @@ app.post('/api/parse-xlsx', auth.requireAuth, prohibitAsesor, upload.single('fil
     const raw = XLSX.utils.sheet_to_json(ws, { defval: '' });
     if (raw.length === 0) return res.status(422).json({ error: 'El archivo está vacío' });
 
-    // Filtrar filas válidas y extraer columnas de variables
-    const rows = raw.filter(r => r.numero);
     const allCols = raw.length > 0 ? Object.keys(raw[0]) : [];
-    const variableCols = allCols.filter(c => !['numero', 'cuenta'].includes(c.toLowerCase()));
+    
+    // Buscar la columna de número de forma flexible (mayúsculas, minúsculas, acentos)
+    const numCol = allCols.find(c => ['numero', 'número'].includes(c.toLowerCase()));
+    const accCol = allCols.find(c => c.toLowerCase() === 'cuenta');
+
+    // Mapear filas asegurando que tengan las propiedades 'numero' y 'cuenta' que el sistema espera
+    const rows = raw.filter(r => numCol && r[numCol]).map(r => ({
+      ...r,
+      numero: String(r[numCol]).trim(),
+      cuenta: accCol ? String(r[accCol]).trim() : ''
+    }));
+
+    const variableCols = allCols.filter(c => !['numero', 'cuenta', 'número'].includes(c.toLowerCase()));
 
     res.json({
       rows,
