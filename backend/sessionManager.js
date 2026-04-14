@@ -56,7 +56,7 @@ class SessionManager extends EventEmitter {
       const sock = makeWASocket({
         version,
         auth: state,
-        logger: pino({ level: 'silent' }),
+        logger: pino({ level: 'warn' }),
         printQRInTerminal: false,
         browser: Browsers.macOS('Desktop'),
         // agent, // Inyectar el agente del proxy
@@ -200,15 +200,17 @@ class SessionManager extends EventEmitter {
 
     // Verificar si existe en WA usando onWhatsApp de Baileys
     try {
+      console.log(`[${clientId}] Intentando resolver JID para: ${to} (Varios: ${variations.join(', ')})`);
       for (let v of variations) {
         const lookup = await session.sock.onWhatsApp(v);
         if (lookup && lookup.length > 0 && lookup[0].exists) {
           jid = lookup[0].jid;
+          console.log(`[${clientId}] JID resuelto con éxito: ${jid}`);
           break;
         }
       }
     } catch (err) {
-      console.warn(`No se pudo resolver ${to}, usando JID por defecto.`);
+      console.warn(`[${clientId}] Error resolviendo JID para ${to}: ${err.message}. Usando default: ${jid}`);
     }
 
     // --- Mejora Anti-Bloqueo: Simular Escritura ---
@@ -227,7 +229,8 @@ class SessionManager extends EventEmitter {
       result = await session.sock.sendMessage(jid, { text: message });
     }
 
-    return { success: true, messageId: result.key.id, chatId: jid };
+    console.log(`[${clientId}] ✅ Mensaje enviado a ${jid}. ID: ${result?.key?.id || '?'}`);
+    return { success: true, messageId: result?.key?.id, chatId: jid };
   }
 
   /**

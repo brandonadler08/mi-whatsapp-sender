@@ -555,8 +555,9 @@ app.post('/api/send', auth.requireAuth, async (req, res) => {
       }
     } else {
       const ownerId = dbModule.stmts.getSessionOwner(clientId);
-      if (ownerId !== req.user.id)
-        return res.status(403).json({ error: 'No tienes permiso para usar esta sesión' });
+      // Permitir si el dueño es null (global) o si el dueño es el usuario actual
+      if (ownerId && ownerId !== req.user.id)
+        return res.status(403).json({ error: 'No tienes permiso para usar esta sesión privada de otro usuario' });
     }
   }
 
