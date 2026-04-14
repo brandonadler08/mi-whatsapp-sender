@@ -156,6 +156,12 @@ async function executePayload(numero, isReply) {
     // Simular latencia humana al responder (2 - 4.5 segundos)
     await new Promise(r => setTimeout(r, 2000 + Math.random() * 2500));
 
+    // --- Mejora Anti-Bloqueo: Simular Visto antes de enviar principal ---
+    try {
+      await sessionManager.readMessages(sessionClientId, `${numero}@s.whatsapp.net`, []);
+      await new Promise(r => setTimeout(r, 1000 + Math.random() * 2000));
+    } catch (e) { }
+
     await sessionManager.sendMessage(sessionClientId, numero, mensajeFinal);
     entry.status = 'sent';
     entry.timestamp = new Date().toISOString();
@@ -519,21 +525,6 @@ app.post('/api/sessions/:clientId/settings', auth.requireAuth, prohibitAsesor, (
   res.json({ success: true, message: 'Configuración guardada. Reinicia la sesión para aplicar cambios de Proxy.' });
 });
 
-// ── Validador de WhatsApp ─────────────────────────────────────────────────────
-app.post('/api/check-whatsapp', auth.requireAuth, async (req, res) => {
-  const { clientId, numero } = req.body;
-  if (!clientId || !numero) {
-    return res.status(400).json({ error: 'clientId y numero son requeridos' });
-  }
-
-  try {
-    const result = await sessionManager.checkNumber(clientId, numero);
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ── Single send ───────────────────────────────────────────────────────────────
 app.post('/api/send', auth.requireAuth, async (req, res) => {
   const { clientId, to, message } = req.body;
@@ -549,17 +540,26 @@ app.post('/api/send', auth.requireAuth, async (req, res) => {
       }
     } else {
       const ownerId = dbModule.stmts.getSessionOwner(clientId);
-      // Permitir si el dueño es null (global) o si el dueño es el usuario actual
-      if (ownerId && ownerId !== req.user.id)
-        return res.status(403).json({ error: 'No tienes permiso para usar esta sesión privada de otro usuario' });
+      if (ownerId !== req.user.id)
+        return res.status(403).json({ error: 'No tienes permiso para usar esta sesión' });
+    }
+  }
+
+  // Resolver imagen si se adjuntó
+  let imageBuffer = null;
+  let imageMimetype = null;
+  if (imageKey) {
+    const img = imageStore.get(imageKey);
+    if (img) {
+      imageBuffer = img.buffer;
+      imageMimetype = img.mimetype;
     }
   }
 
   try {
-    const result = await sessionManager.sendMessage(clientId, to, message);
+    const result = await sessionManager.sendMessage(clientId, to, message, imageBuffer, imageMimetype);
     res.json(result);
   } catch (err) {
-    console.error(`[API/send] ❌ Error enviando a ${to} desde ${clientId}:`, err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

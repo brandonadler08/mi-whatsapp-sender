@@ -56,7 +56,7 @@ class SessionManager extends EventEmitter {
       const sock = makeWASocket({
         version,
         auth: state,
-        logger: pino({ level: 'warn' }),
+        logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
         browser: Browsers.macOS('Desktop'),
         // agent, // Inyectar el agente del proxy
@@ -195,14 +195,11 @@ class SessionManager extends EventEmitter {
 
     if (localN.length !== 10) throw new Error(`Número inválido (no tiene 10 dígitos)`);
 
-    // MÉXICO: El formato para celulares modernos es 521, por lo que debe ser la primera opción
-    // y el valor por defecto si onWhatsApp falla silenciosamente.
-    const variations = [`521${localN}@s.whatsapp.net`, `52${localN}@s.whatsapp.net`];
+    const variations = [`52${localN}@s.whatsapp.net`, `521${localN}@s.whatsapp.net`];
     let jid = variations[0];
 
     // Verificar si existe en WA usando onWhatsApp de Baileys
     try {
-      console.log(`[${clientId}] Resolviendo JID para: ${to}`);
       for (let v of variations) {
         const lookup = await session.sock.onWhatsApp(v);
         if (lookup && lookup.length > 0 && lookup[0].exists) {
@@ -211,7 +208,7 @@ class SessionManager extends EventEmitter {
         }
       }
     } catch (err) {
-      console.warn(`[${clientId}] Error resolviendo JID, usando default: ${jid}`);
+      console.warn(`No se pudo resolver ${to}, usando JID por defecto.`);
     }
 
     // --- Mejora Anti-Bloqueo: Simular Escritura ---
@@ -230,8 +227,7 @@ class SessionManager extends EventEmitter {
       result = await session.sock.sendMessage(jid, { text: message });
     }
 
-    console.log(`[${clientId}] ✅ Mensaje enviado a ${jid}. ID: ${result?.key?.id || '?'}`);
-    return { success: true, messageId: result?.key?.id, chatId: jid };
+    return { success: true, messageId: result.key.id, chatId: jid };
   }
 
   /**
