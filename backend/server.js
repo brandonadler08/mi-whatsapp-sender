@@ -564,6 +564,7 @@ app.post('/api/send', auth.requireAuth, async (req, res) => {
     const result = await sessionManager.sendMessage(clientId, to, message);
     res.json(result);
   } catch (err) {
+    console.error(`[API/send] ❌ Error enviando a ${to} desde ${clientId}:`, err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

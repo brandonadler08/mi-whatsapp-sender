@@ -86,8 +86,11 @@ async function init() {
       from_number   TEXT NOT NULL,
       author_name   TEXT,
       message_text  TEXT,
+      tag           TEXT,
+      cuenta        TEXT,
       timestamp     TEXT NOT NULL,
-      is_read       INTEGER DEFAULT 0
+      is_read       INTEGER DEFAULT 0,
+      asesor_id     TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_replies_session ON replies(session_id);
     CREATE INDEX IF NOT EXISTS idx_replies_read    ON replies(is_read);
@@ -107,6 +110,8 @@ async function init() {
     `ALTER TABLE batches  ADD COLUMN owner_id TEXT`,
     `ALTER TABLE users    ADD COLUMN parent_id TEXT`,
     `ALTER TABLE replies  ADD COLUMN asesor_id TEXT`,
+    `ALTER TABLE replies  ADD COLUMN tag TEXT`,
+    `ALTER TABLE replies  ADD COLUMN cuenta TEXT`,
     `CREATE INDEX IF NOT EXISTS idx_sess_owner  ON sessions(owner_id)`,
     `CREATE INDEX IF NOT EXISTS idx_batch_owner ON batches(owner_id)`,
     `CREATE INDEX IF NOT EXISTS idx_user_parent ON users(parent_id)`,
@@ -264,10 +269,11 @@ const stmts = {
 
   // ── Replies ────────────────────────────────────────────────────────────────
   insertReply(r) {
-    run(`INSERT OR IGNORE INTO replies (id, session_id, from_number, author_name, message_text, timestamp, is_read, asesor_id)
-         VALUES (:id, :session_id, :from_number, :author_name, :message_text, :timestamp, 0, :asesor_id)`, {
+    run(`INSERT OR IGNORE INTO replies (id, session_id, from_number, author_name, message_text, tag, cuenta, timestamp, is_read, asesor_id)
+         VALUES (:id, :session_id, :from_number, :author_name, :message_text, :tag, :cuenta, :timestamp, 0, :asesor_id)`, {
       ':id': r.id, ':session_id': r.session_id, ':from_number': r.from_number,
       ':author_name': r.author_name || '', ':message_text': r.message_text || '',
+      ':tag': r.tag || null, ':cuenta': r.cuenta || null,
       ':timestamp': r.timestamp, ':asesor_id': r.asesor_id || null
     });
   },
@@ -468,8 +474,8 @@ const stmts = {
       SELECT
         r.from_number,
         r.session_id,
-        MAX(r.message) as last_message,
-        MAX(r.received_at) as last_time,
+        MAX(r.message_text) as last_message,
+        MAX(r.timestamp) as last_time,
         SUM(CASE WHEN r.is_read = 0 THEN 1 ELSE 0 END) as unread_count,
         MAX(r.tag) as tag,
         MAX(r.cuenta) as cuenta
@@ -497,12 +503,12 @@ const stmts = {
     // Respuestas recibidas (inbound)
     const received = all(`
       SELECT
-        r.id, r.from_number, r.message, r.session_id,
-        r.received_at as ts, 'in' as direction,
+        r.id, r.from_number, r.message_text as message, r.session_id,
+        r.timestamp as ts, 'in' as direction,
         r.is_read, r.tag, r.cuenta
       FROM replies r
       WHERE r.session_id = :session AND r.from_number = :from
-      ORDER BY r.received_at ASC
+      ORDER BY r.timestamp ASC
     `, params);
 
     return [...sent, ...received].sort((a, b) => new Date(a.ts) - new Date(b.ts));
