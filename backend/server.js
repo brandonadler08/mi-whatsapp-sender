@@ -60,18 +60,6 @@ const sessionManager = new SessionManager();
 const liveReports = [];
 let rrIndex = 0;
 
-function getNextReadySession(user) {
-  let sessions = sessionManager.getSessions().filter(s => s.status === 'ready');
-  if (dbReady && user && user.role !== 'superadmin') {
-    const ownedIds = dbModule.stmts.getSessionsByOwner(user.id).map(s => s.client_id);
-    sessions = sessions.filter(s => ownedIds.includes(s.clientId));
-  }
-  if (sessions.length === 0) return null;
-  const next = sessions[rrIndex % sessions.length];
-  rrIndex++;
-  return next;
-}
-
 // ── Control de procesos activos ────────────────────────────────────────────────
 const bulkState = { running: false, batchId: null, stopRequested: false };
 
@@ -123,24 +111,7 @@ const loginLimiter = rateLimit({
 // ── Session Manager → Socket.IO ───────────────────────────────────────────────
 sessionManager.on('qr', d => io.emit('session:qr', d));
 sessionManager.on('authenticated', d => io.emit('session:authenticated', d));
-sessionManager.on('ready', d => {
-  io.emit('session:ready', d);
-
-  // Verificar si la sesión ya tiene perfil de historial definido
-  if (dbReady) {
-    const profile = dbModule.stmts.getSessionProfile(d.clientId);
-    if (!profile || profile.has_history === null || profile.has_history === undefined) {
-      // Primera vez que se conecta — preguntar al admin si tiene historial
-      setTimeout(() => {
-        io.emit('session:needs_history_check', {
-          clientId: d.clientId,
-          name: d.name || d.clientId,
-          phone: d.phone,
-        });
-      }, 1500); // pequeño delay para que el frontend procese el session:ready primero
-    }
-  }
-});
+sessionManager.on('ready', d => io.emit('session:ready', d));
 sessionManager.on('disconnected', d => io.emit('session:disconnected', d));
 sessionManager.on('auth_failure', d => io.emit('session:auth_failure', d));
 sessionManager.on('session_removed', d => io.emit('session:removed', d));
@@ -148,7 +119,6 @@ sessionManager.on('session_removed', d => io.emit('session:removed', d));
 // ── Lógica Asíncrona Masiva (Bandeja Inteligente) ────────────────────────────
 const pendingPayloads = new Map();
 const activeBatches = new Map();
-const imageStore = new Map();
 const rrAsesores = {};
 
 function prohibitAsesor(req, res, next) {
@@ -175,7 +145,7 @@ async function executePayload(numero, isReply) {
   if (!job) return;
 
   pendingPayloads.delete(numero);
-  if (job.timerId) clearTimeout(job.timerId);
+  clearTimeout(job.timeoutId);
 
   const { batchId, sessionClientId, mensajeFinal, entry } = job;
   const batch = activeBatches.get(batchId);
@@ -310,7 +280,6 @@ app.post('/api/check-number', auth.requireAuth, prohibitAsesor, async (req, res)
 
   try {
     const result = await sessionManager.checkNumber(clientId, String(numero).trim());
-    if (dbReady) dbModule.stmts.insertValidation(result);
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -319,11 +288,11 @@ app.post('/api/check-number', auth.requireAuth, prohibitAsesor, async (req, res)
 
 // Validar múltiples números (resultado en tiempo real por Socket.io)
 app.post('/api/check-numbers', auth.requireAuth, prohibitAsesor, async (req, res) => {
-  const { clientId, numeros, coolingEvery = 100, coolingSecs = 60 } = req.body;
+  const { clientId, numeros } = req.body;
   if (!clientId || !Array.isArray(numeros) || numeros.length === 0)
     return res.status(400).json({ error: 'clientId y numeros[] son requeridos' });
-  if (numeros.length > 10000)
-    return res.status(400).json({ error: 'Máximo 10,000 números por lote' });
+  if (numeros.length > 500)
+    return res.status(400).json({ error: 'Máximo 500 números por lote' });
 
   const session = sessionManager.getSession(clientId);
   if (!session || session.status !== 'ready')
@@ -337,27 +306,17 @@ app.post('/api/check-numbers', auth.requireAuth, prohibitAsesor, async (req, res
     let withWA = 0;
     const results = [];
     for (let i = 0; i < numeros.length; i++) {
-      // ── Pausa de enfriamiento (Configurable) ──
-      if (i > 0 && i % coolingEvery === 0) {
-        console.log(`[Validator] 🧐 Pausando validación por ${coolingSecs}s tras ${i} números (Cooling)`);
-        io.emit('validator:cooling', { index: i, total: numeros.length, seconds: coolingSecs });
-        await sleep(coolingSecs * 1000);
-      }
-
       const r = await sessionManager.checkNumber(clientId, String(numeros[i]).trim());
       if (r.exists) withWA++;
-      const valResult = { ...r, timestamp: new Date().toISOString() };
-      results.push(valResult);
-
-      if (dbReady) dbModule.stmts.insertValidation(r);
+      results.push({ ...r, timestamp: new Date().toISOString() });
 
       io.emit('validator:progress', {
         index: i + 1,
         total: numeros.length,
-        result: valResult
+        result: { ...r, timestamp: new Date().toISOString() }
       });
 
-      // Delay anti-spam base entre 700ms y 1.3s para no saturar WhatsApp
+      // Delay anti-spam entre 700ms y 1.3s para no saturar WhatsApp
       if (i < numeros.length - 1) await sleep(700 + Math.floor(Math.random() * 600));
     }
     io.emit('validator:complete', {
@@ -566,138 +525,19 @@ app.post('/api/sessions/:clientId/settings', auth.requireAuth, prohibitAsesor, (
   res.json({ success: true, message: 'Configuración guardada. Reinicia la sesión para aplicar cambios de Proxy.' });
 });
 
-// ── Perfil de historial de sesión ─────────────────────────────────────────────
-app.get('/api/sessions/:clientId/profile', auth.requireAuth, prohibitAsesor, (req, res) => {
-  const { clientId } = req.params;
-  if (!dbReady) return res.json({ has_history: null, history_level: 0 });
-  const profile = dbModule.stmts.getSessionProfile(clientId);
-  res.json(profile || { client_id: clientId, has_history: null, history_level: 0 });
-});
-
-// ── Marcar historial de sesión (nuevo vs con historial) ────────────────────────
-app.put('/api/sessions/:clientId/history', auth.requireAuth, prohibitAsesor, (req, res) => {
-  const { clientId } = req.params;
-  const { hasHistory } = req.body; // true = tiene historial, false = número nuevo
-
-  if (typeof hasHistory !== 'boolean')
-    return res.status(400).json({ error: 'hasHistory (boolean) es requerido' });
-
-  if (!dbReady) return res.status(503).json({ error: 'DB no disponible' });
-
-  // Nivel automático según historial
-  // Nuevo (false) → nivel 0 (necesita entrenamiento primero)
-  // Con historial (true) → nivel 1 (permite hasta 50 msgs/día)
-  const historyLevel = hasHistory ? 1 : 0;
-
-  dbModule.stmts.updateSessionHistory(clientId, hasHistory, historyLevel);
-
-  // Actualizar los límites en memoria del trainingLocks si aplica
-  const session = sessionManager.sessions.get(clientId);
-  if (session) {
-    session.hasHistory = hasHistory;
-    session.historyLevel = historyLevel;
+// ── Validador de WhatsApp ─────────────────────────────────────────────────────
+app.post('/api/check-whatsapp', auth.requireAuth, async (req, res) => {
+  const { clientId, numero } = req.body;
+  if (!clientId || !numero) {
+    return res.status(400).json({ error: 'clientId y numero son requeridos' });
   }
 
-  // Emitir evento para que el frontend se actualice
-  io.emit('session:history_set', {
-    clientId,
-    hasHistory,
-    historyLevel,
-    dailyLimit: hasHistory ? 50 : 0, // 0 = bloqueado para bulk hasta completar entrenamiento
-    label: session?.name || clientId
-  });
-
-  const msg = hasHistory
-    ? `✅ Sesión marcada con historial (Nivel 1: hasta 50 msgs/día)`
-    : `🏋️ Sesión marcada como nueva — se iniciará entrenamiento`;
-
-  console.log(`[History] ${clientId}: ${msg}`);
-  res.json({ success: true, hasHistory, historyLevel, message: msg });
-});
-
-// ── Modo Intensidad (Ataque a 1 número) ────────────────────────────────────────
-const intensityState = { running: false, stopped: false };
-
-function parseSpintax(text) {
-  if (!text) return '';
-  const regex = /\{([^{}]+)\}/g;
-  return text.replace(regex, (match, contents) => {
-    const choices = contents.split('|');
-    return choices[Math.floor(Math.random() * choices.length)];
-  });
-}
-
-app.post('/api/intensity/start', auth.requireAuth, async (req, res) => {
-  if (intensityState.running) return res.status(400).json({ error: 'Ya hay un ataque en curso' });
-  
-  const { targetNumber, message, count, delayMinMs, delayMaxMs } = req.body;
-  if (!targetNumber || !count || !message) return res.status(400).json({ error: 'Faltan parámetros' });
-
-  // Agarrar las URLs (ids) de las sesiones ready
-  const activeSessions = [];
-  for (const [clientId, session] of sessionManager.sessions.entries()) {
-    if (session.status === 'ready' && session.sock) {
-      activeSessions.push(clientId);
-    }
+  try {
+    const result = await sessionManager.checkNumber(clientId, numero);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-
-  if (activeSessions.length === 0) return res.status(400).json({ error: 'No hay sesiones conectadas' });
-
-  intensityState.running = true;
-  intensityState.stopped = false;
-  let sent = 0;
-  let errors = 0;
-
-  res.json({ success: true, message: 'Ataque iniciado' });
-
-  // Ejecutar bucle en background
-  (async () => {
-    let sessionIndex = 0;
-
-    for (let i = 0; i < count; i++) {
-      if (intensityState.stopped) break;
-
-      const sid = activeSessions[sessionIndex];
-      const sess = sessionManager.sessions.get(sid);
-      sessionIndex = (sessionIndex + 1) % activeSessions.length; // Rotación Round-Robin
-
-      const msg = parseSpintax(message);
-
-      try {
-        if (!sess || !sess.sock) throw new Error("Sesión desconectada durante ráfaga");
-        const jid = targetNumber + '@s.whatsapp.net';
-        await sess.sock.sendMessage(jid, { text: msg });
-        
-        sent++;
-        io.emit('intensity:progress', {
-          current: i + 1, total: count, sessionUrl: sid, target: targetNumber, message: msg, status: 'sent'
-        });
-      } catch (err) {
-        errors++;
-        io.emit('intensity:progress', {
-          current: i + 1, total: count, sessionUrl: sid, target: targetNumber, message: msg, status: 'error', error: err.message
-        });
-      }
-
-      // Delay
-      if (i < count - 1 && !intensityState.stopped) {
-        const delay = Math.floor(Math.random() * (delayMaxMs - delayMinMs + 1)) + delayMinMs;
-        if (delay > 0) {
-          io.emit('intensity:waiting', { delayMs: delay, sessionUrl: activeSessions[sessionIndex] });
-          await sleep(delay);
-        }
-      }
-    }
-
-    intensityState.running = false;
-    io.emit('intensity:complete', { total: count, sent, errors, forcedStop: intensityState.stopped });
-  })();
-});
-
-app.post('/api/intensity/stop', auth.requireAuth, (req, res) => {
-  if (!intensityState.running) return res.status(400).json({ error: 'No hay ataque en curso' });
-  intensityState.stopped = true;
-  res.json({ success: true });
 });
 
 // ── Single send ───────────────────────────────────────────────────────────────
@@ -720,19 +560,8 @@ app.post('/api/send', auth.requireAuth, async (req, res) => {
     }
   }
 
-  // Resolver imagen si se adjuntó
-  let imageBuffer = null;
-  let imageMimetype = null;
-  if (imageKey) {
-    const img = imageStore.get(imageKey);
-    if (img) {
-      imageBuffer = img.buffer;
-      imageMimetype = img.mimetype;
-    }
-  }
-
   try {
-    const result = await sessionManager.sendMessage(clientId, to, message, imageBuffer, imageMimetype);
+    const result = await sessionManager.sendMessage(clientId, to, message);
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -923,43 +752,103 @@ app.post('/api/parse-xlsx', auth.requireAuth, prohibitAsesor, upload.single('fil
     const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const raw = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
     if (raw.length === 0) return res.status(422).json({ error: 'El archivo está vacío' });
 
-    const allCols = raw.length > 0 ? Object.keys(raw[0]) : [];
-    
-    // Buscar la columna de número de forma flexible (mayúsculas, minúsculas, acentos)
-    const numCol = allCols.find(c => ['numero', 'número'].includes(c.toLowerCase()));
-    const accCol = allCols.find(c => c.toLowerCase() === 'cuenta');
+    const allKeys = Object.keys(raw[0]).map(k => k.toLowerCase().trim());
+    const variableCols = allKeys.filter(k => !SYSTEM_COLS.has(k));
 
-    // Mapear filas asegurando que tengan las propiedades 'numero' y 'cuenta' que el sistema espera
-    const rows = raw.filter(r => numCol && r[numCol]).map(r => ({
-      ...r,
-      numero: String(r[numCol]).trim(),
-      cuenta: accCol ? String(r[accCol]).trim() : ''
-    }));
-
-    const variableCols = allCols.filter(c => !['numero', 'cuenta', 'número'].includes(c.toLowerCase()));
+    const errors = [];
+    const parsed = raw.map((r, i) => {
+      const row = {};
+      for (const [k, v] of Object.entries(r)) {
+        row[k.toLowerCase().trim()] = String(v).trim();
+      }
+      const rowNum = i + 2;
+      if (!row.numero) { errors.push(`Fila ${rowNum}: falta columna "numero"`); return null; }
+      const n10 = normalizeMx10(row.numero);
+      if (!n10) { errors.push(`Fila ${rowNum}: "${row.numero}" no es válido`); return null; }
+      return { ...row, numero: n10 };
+    }).filter(Boolean);
 
     res.json({
-      rows,
-      total: rows.length,
-      skipped: raw.length - rows.length,
-      variableCols,
-      errors: []
+      success: true, total: parsed.length,
+      skipped: raw.length - parsed.length,
+      variableCols, errors: errors.slice(0, 20), rows: parsed
     });
   } catch (err) {
-    res.status(500).json({ error: 'Error al procesar XLSX: ' + err.message });
+    res.status(422).json({ error: err.message });
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// REST API — Bulk send  [PROTECTED]
+// ═══════════════════════════════════════════════════════════════════════════════
 app.post('/api/send-bulk-xlsx', auth.requireAuth, prohibitAsesor, async (req, res) => {
-  const { name, template, delayMin, delayMax, clientId, warmup, coolingEvery, coolingSecs, dailyLimit, ignoreTrainingLock, imageKey } = req.body;
-  const rows = JSON.parse(req.body.rows || '[]');
+  const { rows, clientId, minDelay, maxDelay, template, batchName, warmup, imageKey,
+          dailyLimit, coolingEvery, coolingSecs } = req.body;
+  const { user } = req;
 
-  if (bulkState.running && !ignoreTrainingLock) {
-    return res.status(409).json({ error: 'Ya hay un envío masivo en curso' });
+  if (!rows || !Array.isArray(rows) || rows.length === 0)
+    return res.status(400).json({ error: 'rows requerido' });
+  if (!clientId)
+    return res.status(400).json({ error: 'clientId requerido' });
+  if (!template?.trim())
+    return res.status(400).json({ error: 'La plantilla del mensaje es requerida' });
+
+  const useRotation = clientId === 'ALL';
+  // Delays ahora vienen en SEGUNDOS desde la UI; convertir a ms
+  const dMin = Math.max(10000, (parseInt(minDelay) || 20) * 1000);
+  const dMax = Math.min(300000, (parseInt(maxDelay) || 45) * 1000);
+  const maxPerDay  = Math.max(10, parseInt(dailyLimit)  || 150);
+  const coolEvery  = Math.max(5,  parseInt(coolingEvery) || 30);
+  const coolMs     = Math.max(30000, (parseInt(coolingSecs) || 120) * 1000);
+  const batchId = genId();
+  const batchCreated = new Date().toISOString();
+  const name = batchName?.trim() || `Envío ${new Date().toLocaleString('es-MX')}`;
+
+  // Validate sessions (scoped to owner for non-superadmin)
+  let readySessions = sessionManager.getSessions().filter(s => s.status === 'ready');
+  if (user.role !== 'superadmin' && dbReady) {
+    const owned = dbModule.stmts.getSessionsByOwner(user.id).map(r => r.client_id);
+    readySessions = readySessions.filter(s => owned.includes(s.clientId));
+  }
+  if (readySessions.length === 0)
+    return res.status(409).json({ error: 'No hay sesiones conectadas disponibles' });
+  if (!useRotation && !sessionManager.hasSession(clientId))
+    return res.status(404).json({ error: `Sesión "${clientId}" no encontrada` });
+
+  // Ownership check for single session
+  if (!useRotation && user.role !== 'superadmin' && dbReady) {
+    const ownerId = dbModule.stmts.getSessionOwner(clientId);
+    if (ownerId !== user.id)
+      return res.status(403).json({ error: 'No tienes permiso para usar esta sesión' });
   }
 
+  // Verificar bloqueo de maduración (entrenamiento en curso o periodo de espera)
+  if (!useRotation) {
+    const lock = isSessionLocked(clientId);
+    if (lock) {
+      const remH = Math.ceil((lock.unlocksAt - Date.now()) / 3600000);
+      return res.status(423).json({
+        error: `🔒 La sesión "${clientId}" está en período de maduración post-entrenamiento (${remH}h restantes). Usa otra sesión o espera a que termine el período.`
+      });
+    }
+  }
+
+  if (dbReady) {
+    dbModule.stmts.insertBatch({
+      id: batchId, name, total: rows.length,
+      session_mode: useRotation ? 'ALL' : clientId,
+      delay_ms: dMin, template: String(template || '').slice(0, 5000),
+      owner_id: user.id,
+      created_at: batchCreated
+    });
+  }
+
+  res.json({ success: true, batchId, total: rows.length });
+
+  // Resolver imagen del imageStore ANTES del loop asíncrono
   let bulkImageBuffer = null;
   let bulkImageMimetype = null;
   if (imageKey) {
@@ -967,60 +856,62 @@ app.post('/api/send-bulk-xlsx', auth.requireAuth, prohibitAsesor, async (req, re
     if (img) {
       bulkImageBuffer = img.buffer;
       bulkImageMimetype = img.mimetype;
+      console.log(`[Bulk ${batchId}] Usando imagen adjunta: ${img.name}`);
     }
   }
 
-  const batchId = genId();
-  const dMin = parseInt(delayMin) || 3000;
-  const dMax = parseInt(delayMax) || 7000;
-  const coolEveryNum = parseInt(coolingEvery) || 30;
-  const coolMsNum = (parseInt(coolingSecs) || 60) * 1000;
-  const dailyLimitNum = parseInt(dailyLimit) || 150;
-
-  activeBatches.set(batchId, {
-    id: batchId, name, total: rows.length, done: 0, sent: 0, errors: 0,
-    owner_id: req.user.id, started_at: new Date().toISOString()
-  });
-
-  if (dbReady) dbModule.stmts.insertBatch({
-    id: batchId, name, total: rows.length, owner_id: req.user.id,
-    template, started_at: new Date().toISOString()
-  });
-
-  bulkState.running = true;
-  bulkState.batchId = batchId;
-  bulkState.stopRequested = false;
-
-  res.json({ success: true, batchId, total: rows.length });
-
   // ── Async bulk send ───────────────────────────────────────────────────────
   (async () => {
-    const sessionCounters = {};
+    bulkState.running = true;
+    bulkState.batchId = batchId;
+    bulkState.stopRequested = false;
+
+    // Contadores de mensajes por sesión (para enfriamiento y límite diario)
+    const sessionCounters = {}; // clientId -> { today: N, sinceCooling: N }
+
+    activeBatches.set(batchId, {
+      name: name,
+      total: rows.length,
+      done: 0,
+      sent: 0,
+      errors: 0
+    });
+
     for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      if (bulkState.stopRequested) break;
-
-      const numero = String(row.numero || '').trim();
-      const cuenta = String(row.cuenta || '').trim();
-
-      if (!numero) {
-        const entry = makeEntry(batchId, row, 'Número vacío', 'N/A', 'error', 'Número no proporcionado');
-        addReport(entry);
-        const batch = activeBatches.get(batchId);
-        if (batch) { batch.errors++; batch.done++; checkBatchComplete(batchId); }
-        continue;
+      // ── Chequeo de detención ──
+      if (bulkState.stopRequested) {
+        console.log(`[Bulk ${batchId}] ⏹️ Detenido por usuario en fila ${i + 1}/${rows.length}`);
+        io.emit('bulk:stopped', { batchId, batchName: name, doneAt: i, total: rows.length });
+        break;
       }
-
+      const { numero, cuenta } = row;
       const mensajeFinal = applySpintax(applyTemplate(template, row));
-      let session = null;
 
-      if (clientId === 'ALL') {
-        session = getNextReadySession(req.user);
+      let session;
+      if (useRotation) {
+        // Buscar sesión disponible que no haya superado el límite diario
+        const allReady = sessionManager.getSessions().filter(s => s.status === 'ready');
+        session = allReady.find(s => {
+          const c = sessionCounters[s.clientId];
+          return !c || c.today < maxPerDay;
+        }) || null;
+        // Si todas han superado el límite diario, tomar la con menos mensajes
+        if (!session && allReady.length > 0) {
+          session = allReady.sort((a, b) =>
+            (sessionCounters[a.clientId]?.today || 0) - (sessionCounters[b.clientId]?.today || 0)
+          )[0];
+        }
         if (!session) {
-          const entry = makeEntry(batchId, row, mensajeFinal, 'RR', 'error', 'No hay sesiones listas');
+          const entry = makeEntry(batchId, row, mensajeFinal, '—', 'error', 'Sin sesiones disponibles');
           addReport(entry);
+          if (dbReady) dbModule.stmts.insertMessage({
+            id: entry.id, batch_id: batchId, numero: entry.numero, cuenta: entry.cuenta,
+            mensaje_final: entry.mensaje, session_used: entry.sessionUsed,
+            status: entry.status, error: entry.error, timestamp: entry.timestamp
+          });
           const batch = activeBatches.get(batchId);
-          if (batch) { batch.errors++; batch.done++; checkBatchComplete(batchId); }
+          batch.errors++; batch.done++;
+          checkBatchComplete(batchId);
           continue;
         }
       } else {
@@ -1048,18 +939,18 @@ app.post('/api/send-bulk-xlsx', auth.requireAuth, prohibitAsesor, async (req, re
       sessionCounters[sid].sinceCooling++;
 
       // ── Pausa de enfriamiento ──
-      if (sessionCounters[sid].sinceCooling >= coolEveryNum) {
+      if (sessionCounters[sid].sinceCooling >= coolEvery) {
         sessionCounters[sid].sinceCooling = 0;
-        const coolMin = Math.round(coolMsNum / 60000);
-        console.log(`[Bulk ${batchId}] 🧐 Sesión ${sid} enfriándose ${coolMin}min después de ${coolEveryNum} mensajes`);
-        io.emit('bulk:cooling', { batchId, sessionId: sid, coolMs: coolMsNum, index: i + 1, total: rows.length });
-        await sleep(coolMsNum);
+        const coolMin = Math.round(coolMs / 60000);
+        console.log(`[Bulk ${batchId}] 🧐 Sesión ${sid} enfriándose ${coolMin}min después de ${coolEvery} mensajes`);
+        io.emit('bulk:cooling', { batchId, sessionId: sid, coolMs, index: i + 1, total: rows.length });
+        await sleep(coolMs);
       }
 
       // ── Advertencia de límite diario ──
-      if (sessionCounters[sid].today >= dailyLimitNum) {
-        console.warn(`[Bulk ${batchId}] ⚠️ Sesión ${sid} alcanzó el límite de ${dailyLimitNum} msgs/día`);
-        io.emit('bulk:daily_limit', { batchId, sessionId: sid, limit: dailyLimitNum });
+      if (sessionCounters[sid].today >= maxPerDay) {
+        console.warn(`[Bulk ${batchId}] ⚠️ Sesión ${sid} alcanzó el límite de ${maxPerDay} msgs/día`);
+        io.emit('bulk:daily_limit', { batchId, sessionId: sid, limit: maxPerDay });
       }
 
       const entry = makeEntry(batchId, row, mensajeFinal, session.name || session.clientId, 'pending', null);
@@ -1644,25 +1535,6 @@ io.on('connection', socket => {
 app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html'));
 });
-
-// ── Validations History Endpoint ───────────────────────────────────
-app.get('/api/validations/history', auth.requireAuth, prohibitAsesor, (req, res) => {
-  if (!dbReady) return res.status(503).json({ error: 'DB no disponible' });
-  const history = dbModule.stmts.getValidationsHistory(1000);
-  res.json({ success: true, history });
-});
-
-// ── Daily Cleanup Routine (90 days) ────────────────────────────────
-function runDailyCleanup() {
-  if (dbReady) {
-    console.log('[Cleanup] 🧹 Iniciando limpieza diaria de registros antiguos...');
-    dbModule.stmts.deleteOldValidations();
-  }
-}
-
-// Ejecutar limpieza al iniciar (con un pequeño delay para asegurar DB) y cada 24h
-setTimeout(runDailyCleanup, 10000);
-setInterval(runDailyCleanup, 24 * 60 * 60 * 1000);
 
 // ── Start ──────────────────────────────────────────────────────────────────────
 (async () => {

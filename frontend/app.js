@@ -279,7 +279,6 @@ async function sendInboxReply() {
   try {
     const res = await apiFetch('/api/send', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ clientId: inboxCRM.activeSession, to: inboxCRM.activeContact, message: msg }),
     });
     const data = await res.json();
@@ -388,45 +387,6 @@ const state = {
 
 let socket;
 let qrModalPending = null;
-let historyCheckClientId = null; // sesión pendiente del modal de diagnóstico
-
-// ─── Diagnóstico de historial: acción al seleccionar opción ───────────────────
-async function selectHistoryOption(hasHistory) {
-  const clientId = historyCheckClientId;
-  if (!clientId) return;
-
-  closeModal('modal-history-check');
-  historyCheckClientId = null;
-
-  try {
-    const res = await apiFetch(`/api/sessions/${encodeURIComponent(clientId)}/history`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hasHistory })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-
-    if (!hasHistory) {
-      // Número nuevo → navegar al entrenamiento con la sesión pre-seleccionada
-      showToast('🏋️ Redirigiendo al módulo de entrenamiento...', 'info', 3000);
-      setTimeout(() => {
-        navigate('training');
-        // Pre-marcar la sesión en el selector de entrenamiento si existe
-        const trSess = document.getElementById('tr-session-select') || document.querySelector('#page-training select');
-        if (trSess) {
-          trSess.value = clientId;
-        }
-        showToast(`Inicia el entrenamiento para "${data.label || clientId}" antes de enviar campañas.`, 'info', 6000);
-      }, 800);
-    } else {
-      // Con historial → mostrar límites activos
-      showToast(`✅ Nivel 1 activo: hasta 50 mensajes/día de forma segura`, 'success', 5000);
-    }
-  } catch (err) {
-    showToast('Error al guardar: ' + err.message, 'error');
-  }
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // INIT
@@ -456,7 +416,6 @@ function showApp() {
   initSocket();
   initDragDrop();
   initTemplateCharCounter();
-  loadValidationHistory(); // Carga inicial del historial del validador
 }
 
 function applyUserRole() {
@@ -484,13 +443,13 @@ function applyUserRole() {
   // document.getElementById('nav-proxies').style.display = isAdmin ? '' : 'none';
 
   if (isAsesor) {
-    ['nav-sessions', 'nav-send', 'nav-bulk', 'nav-reports', 'nav-history', 'nav-validator', 'nav-intensity'].forEach(id => {
+    ['nav-sessions', 'nav-send', 'nav-bulk', 'nav-reports', 'nav-history'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
     navigate('inbox');
   } else {
-    ['nav-sessions', 'nav-send', 'nav-bulk', 'nav-reports', 'nav-history', 'nav-validator', 'nav-intensity'].forEach(id => {
+    ['nav-sessions', 'nav-send', 'nav-bulk', 'nav-reports', 'nav-history'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.style.display = '';
     });
@@ -802,71 +761,7 @@ function initSocket() {
     trLog('ok', `🏁 ¡Entrenamiento completado! ${sent} enviados, ${errors} errores — ${formatEta(duration)} totales`);
     showToast(`Entrenamiento completado: ${sent} mensajes enviados`, 'success', 6000);
   });
-
-  // ── Validador: progreso en tiempo real ────────────────────────────────────
-  socket.on('validator:progress', (data) => handleValidatorProgress(data));
-  socket.on('validator:cooling', ({ index, total, seconds }) => {
-    const msg = `🧊 Pausa de seguridad: ${seconds}s tras ${index}/${total} validaciones`;
-    log('info', msg);
-    showToast(msg, 'info');
-  });
-  socket.on('validator:complete', (data) => handleValidatorComplete(data));
-
-  // ── Diagnóstico de historial ──────────────────────────────────────────────
-  socket.on('session:needs_history_check', ({ clientId, name, phone }) => {
-    // Solo mostrar al admin/superadmin
-    if (auth.user?.role === 'asesor') return;
-    historyCheckClientId = clientId;
-    const nameEl = document.getElementById('history-check-session-name');
-    if (nameEl) nameEl.textContent = `${name || clientId}${phone ? ` (+52${phone})` : ''}`;
-    openModal('modal-history-check');
-  });
-
-  socket.on('session:history_set', ({ clientId, hasHistory, historyLevel, label }) => {
-    showToast(
-      hasHistory
-        ? `✅ ${label || clientId}: Nivel 1 activo (50 msgs/día)`
-        : `🏋️ ${label || clientId}: Entrenamiento requerido`,
-      hasHistory ? 'success' : 'info',
-      5000
-    );
-  });
-
-  // ── Intensity Socket events ──────────────────────────────────────────────────
-  socket.on('intensity:progress', ({ current, total, sessionUrl, message, status, error, target }) => {
-    const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-    document.getElementById('int-progress-bar').style.width = `${pct}%`;
-    document.getElementById('int-progress-text').textContent = `${current} / ${total}`;
-    
-    if (status === 'sent') {
-      const e = document.getElementById('int-sent');
-      e.textContent = parseInt(e.textContent) + 1;
-      intLog('ok', `✅ [Línea: ${sessionUrl}] → [${target}]: "${esc(message).slice(0,60)}..."`);
-    } else {
-      const e = document.getElementById('int-errors');
-      e.textContent = parseInt(e.textContent) + 1;
-      intLog('err', `❌ [Línea: ${sessionUrl}] falló: ${error || 'Desconocido'}`);
-    }
-  });
-
-  socket.on('intensity:waiting', ({ delayMs, sessionUrl }) => {
-    intLog('info', `⏳ Esperando ${(delayMs / 1000).toFixed(1)}s (Próximo disparo: ${sessionUrl})`);
-  });
-
-  socket.on('intensity:complete', ({ total, sent, errors, forcedStop }) => {
-    document.getElementById('int-progress-bar').style.width = '100%';
-    document.getElementById('int-progress-text').textContent = forcedStop ? `Detenido (${total})` : `${total} / ${total}`;
-    document.getElementById('btn-int-start').style.display = '';
-    document.getElementById('btn-int-stop').style.display = 'none';
-    document.getElementById('btn-int-start').disabled = false;
-    document.getElementById('btn-int-start').textContent = '🔥 Fuego a Discreción';
-    
-    intLog('ok', forcedStop ? `🛑 Ráfaga detenida. (${sent} enviados, ${errors} errores)` : `🏁 ¡Ataque completado con ${sent} enviados y ${errors} errores!`);
-    showToast(forcedStop ? 'Intensidad detenida' : 'Intensidad completada', forcedStop ? 'info' : 'success');
-  });
-
 }
-
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // NAVIGATION
@@ -874,8 +769,7 @@ function initSocket() {
 const pageTitles = {
   sessions: 'Sesiones', send: 'Enviar Mensaje', bulk: 'Envío Masivo XLSX',
   reports: 'Envío Activo', history: 'Historial DB', log: 'Registro de Actividad',
-  users: 'Gestión de Usuarios', training: 'Modo Entrenamiento',
-  validator: 'Validador WhatsApp', intensity: 'Modo Intensidad'
+  users: 'Gestión de Usuarios', training: 'Modo Entrenamiento'
 };
 
 function navigate(page) {
@@ -890,7 +784,6 @@ function navigate(page) {
     page === 'sessions' ? `<button class="btn btn-primary" onclick="openAddSessionModal()">＋ Nueva Sesión</button>` :
       page === 'users' ? `<button class="btn btn-primary" onclick="openAddUserModal()">＋ Nuevo Usuario</button>` : '';
   if (page === 'history') loadHistory();
-  if (page === 'validator') loadValidationHistory();
   if (page === 'users') loadUsers();
   if (page === 'inbox') loadInbox();
   if (page === 'proxies') loadProxyStats();
@@ -1092,13 +985,6 @@ function populateSessionSelects() {
       info.style.color = 'var(--text-3)';
     }
   }
-
-  // ── FIX PERMANENTE: siempre sincronizar la lista del modo entrenamiento ──
-  // Se llama aquí porque populateSessionSelects() se ejecuta en CADA cambio de
-  // estado de sesión (connect/disconnect), garantizando que la lista siempre
-  // refleje los dispositivos actualmente conectados sin necesidad de navegar
-  // manualmente a la pestaña de Entrenamiento.
-  renderTrainingSessions();
 }
 
 // ── Helper: obtener primera sesión ready ───────────────────────────────────
@@ -1126,20 +1012,19 @@ async function validateSingle() {
   const btn = document.getElementById('btn-val-single');
   btn.disabled = true; btn.textContent = '...';
   try {
-    const res = await apiFetch('/api/check-number', {
+    const res = await apiFetch('/api/check-whatsapp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ clientId, numero: num })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
-    const hasWA = data.exists || data.hasWhatsapp || false;
-    const entry = { numero: num, hasWhatsapp: hasWA, jid: data.jid || '', hora: new Date().toLocaleTimeString('es-MX') };
+    const entry = { numero: num, hasWhatsapp: data.hasWhatsapp, jid: data.jid || '', hora: new Date().toLocaleTimeString('es-MX') };
     validatorResults.unshift(entry);
     updateValidatorStats();
     renderValidatorTable();
     document.getElementById('btn-export-validator').style.display = '';
-    showToast(hasWA ? `✅ ${num} tiene WhatsApp` : `❌ ${num} NO tiene WhatsApp`, hasWA ? 'success' : 'error');
+    showToast(data.hasWhatsapp ? `✅ ${num} tiene WhatsApp` : `❌ ${num} NO tiene WhatsApp`, data.hasWhatsapp ? 'success' : 'error');
   } catch (err) {
     showToast('Error: ' + err.message, 'error');
   } finally {
@@ -1153,91 +1038,41 @@ async function validateBulk() {
   const clientId = getValidatorSession();
   if (!clientId) return;
   const nums = [...new Set(raw.split('\n').map(n => n.trim()).filter(n => n.length >= 8))].slice(0, 500);
-  if (!nums.length) { showToast('Sin números válidos (mín 8 dígitos)', 'error'); return; }
+  if (!nums.length) { showToast('Sin números válidos', 'error'); return; }
 
   const btn = document.getElementById('btn-val-bulk');
   const progress = document.getElementById('val-progress-wrap');
   const bar = document.getElementById('val-progress-bar');
   const text = document.getElementById('val-progress-text');
-
   btn.disabled = true; btn.textContent = '⏳ Validando...';
-  if (progress) progress.style.display = 'block';
-  if (bar) bar.style.width = '0%';
-  if (text) text.textContent = `0 / ${nums.length}`;
+  progress.style.display = 'block';
 
-  try {
-    const res = await apiFetch('/api/check-numbers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clientId, numeros: nums })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    showToast(`Validando ${nums.length} números en segundo plano...`, 'info');
-  } catch (err) {
-    showToast('Error: ' + err.message, 'error');
-    btn.disabled = false; btn.textContent = '🔍 Iniciar Validación Masiva';
-  }
-}
-
-async function loadValidationHistory() {
-  try {
-    const res = await apiFetch('/api/validations/history');
-    const data = await res.json();
-    if (res.ok && data.history) {
-      renderValidationHistory(data.history);
+  let done = 0;
+  for (const num of nums) {
+    try {
+      const res = await apiFetch('/api/check-whatsapp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId, numero: num })
+      });
+      const data = await res.json();
+      const entry = { numero: num, hasWhatsapp: data.hasWhatsapp, jid: data.jid || '', hora: new Date().toLocaleTimeString('es-MX') };
+      validatorResults.unshift(entry);
+    } catch (e) {
+      validatorResults.unshift({ numero: num, hasWhatsapp: false, jid: 'Error', hora: new Date().toLocaleTimeString('es-MX') });
     }
-  } catch (err) {
-    console.error('Error cargando historial:', err);
-  }
-}
-
-function renderValidationHistory(history) {
-  const tbody = document.getElementById('val-db-history-tbody');
-  if (!tbody) return;
-  if (!history || history.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:20px;color:var(--text-3)">Sin registros previos</td></tr>';
-    return;
-  }
-  tbody.innerHTML = history.map(h => {
-    const date = new Date(h.timestamp).toLocaleString('es-MX', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
-    return `
-      <tr>
-        <td>${esc(h.numero)}</td>
-        <td>${h.has_wa ? '<span style="color:var(--success)">✅</span>' : '<span style="color:var(--danger)">❌</span>'}</td>
-        <td style="color:var(--text-3);font-size:10px">${date}</td>
-      </tr>
-    `;
-  }).join('');
-}
-
-// Eventos de socket para el validador masivo (inicializados en initSocket)
-function handleValidatorProgress(data) {
-  const { index, total, result } = data;
-  const bar = document.getElementById('val-progress-bar');
-  const text = document.getElementById('val-progress-text');
-  if (bar) bar.style.width = `${Math.round((index / total) * 100)}%`;
-  if (text) text.textContent = `${index} / ${total}`;
-
-  if (result) {
-    const hasWA = result.exists || result.hasWhatsapp || false;
-    const entry = {
-      numero: result.number || result.numero || '',
-      hasWhatsapp: hasWA,
-      jid: result.jid || '',
-      hora: new Date().toLocaleTimeString('es-MX')
-    };
-    validatorResults.unshift(entry);
+    done++;
+    const pct = Math.round((done / nums.length) * 100);
+    bar.style.width = `${pct}%`;
+    text.textContent = `${done} / ${nums.length}`;
     updateValidatorStats();
     renderValidatorTable();
+    await new Promise(r => setTimeout(r, 1500)); // delay entre validaciones
   }
-}
 
-function handleValidatorComplete(data) {
-  const btn = document.getElementById('btn-val-bulk');
-  if (btn) { btn.disabled = false; btn.textContent = '🔍 Iniciar Validación Masiva'; }
+  btn.disabled = false; btn.textContent = '🔍 Iniciar Validación Masiva';
   document.getElementById('btn-export-validator').style.display = '';
-  showToast(`✅ Validación completa: ${data.withWA || 0} con WA / ${data.withoutWA || 0} sin WA`, 'success');
+  showToast(`Validación completa: ${nums.length} números procesados`, 'success');
 }
 
 function updateValidatorStats() {
@@ -1247,12 +1082,6 @@ function updateValidatorStats() {
   document.getElementById('val-ok').textContent   = ok;
   document.getElementById('val-fail').textContent  = no;
   document.getElementById('val-rate').textContent  = validatorResults.length > 0 ? `${Math.round((ok / validatorResults.length) * 100)}%` : '—';
-  
-  // Mostrar exportable dinámicamente si hay datos
-  const exportBtn = document.getElementById('btn-export-validator');
-  if (exportBtn) {
-    exportBtn.style.display = validatorResults.length > 0 ? '' : 'none';
-  }
 }
 
 function renderValidatorTable() {
@@ -1483,7 +1312,7 @@ async function sendBulkXlsx() {
   const maxDelay = parseInt(document.getElementById('bulk-delay-max')?.value) || 45;
   const template = document.getElementById('bulk-template').value.trim();
   const batchName = document.getElementById('batch-name').value.trim();
-  const warmup = document.getElementById('bulk-smart-mode')?.checked || false;
+  const warmup = document.getElementById('bulk-warmup')?.checked || false;
   const dailyLimit   = parseInt(document.getElementById('bulk-daily-limit')?.value)  || 150;
   const coolingEvery = parseInt(document.getElementById('bulk-cooling-every')?.value) || 30;
   const coolingSecs  = parseInt(document.getElementById('bulk-cooling-secs')?.value)  || 120;
@@ -1512,11 +1341,7 @@ async function sendBulkXlsx() {
   log('info', `⏱️ Delay: ${minDelay}s–${maxDelay}s | Límite diario: ${dailyLimit} | Pausa c/${coolingEvery} msgs (${coolingSecs}s)`);
 
   try {
-    const ignoreTrainingLock = document.getElementById('bulk-ignore-lock')?.checked || false;
-    await apiPost('/api/send-bulk-xlsx', { 
-      rows: state.xlsxRows, clientId, minDelay, maxDelay, template, batchName, warmup, 
-      dailyLimit, coolingEvery, coolingSecs, ignoreTrainingLock 
-    });
+    await apiPost('/api/send-bulk-xlsx', { rows: state.xlsxRows, clientId, minDelay, maxDelay, template, batchName, warmup, dailyLimit, coolingEvery, coolingSecs });
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');
     log('err', `❌ ${err.message}`);
@@ -2016,88 +1841,69 @@ function now() { return new Date().toLocaleTimeString('es-MX', { hour: '2-digit'
 state.trainingRunning = false;
 
 function renderTrainingSessions() {
-  try {
-    const container = document.getElementById('tr-session-list');
-    if (!container) return;
+  const container = document.getElementById('tr-session-list');
+  if (!container) return;
 
-    const all = Object.values(state.sessions || {});
-    const ready = all.filter(s => s && s.status === 'ready');
+  const all = Object.values(state.sessions);
+  const ready = all.filter(s => s.status === 'ready');
 
-    // Update sessions stat card
-    const statEl = document.getElementById('tr-sessions');
-    if (statEl) {
-      statEl.textContent = ready.length > 0 ? `${ready.length} conectores` : (all.length > 0 ? `0 / ${all.length}` : '—');
-      statEl.style.color = ready.length > 0 ? 'var(--accent)' : 'var(--text-3)';
-    }
+  // Update sessions stat card
+  const statEl = document.getElementById('tr-sessions');
+  if (statEl) {
+    statEl.textContent = ready.length > 0 ? `${ready.length} conectores` : (all.length > 0 ? `0 / ${all.length}` : '—');
+    statEl.style.color = ready.length > 0 ? 'var(--accent)' : 'var(--text-3)';
+  }
 
-    if (all.length === 0) {
-      container.innerHTML = '<div style="color:var(--text-3);font-size:13px;padding:8px">No hay sesiones en el sistema. <br>Crea una en la sección <b>Sesiones</b> y escanea el QR.</div>';
-      return;
-    }
+  container.innerHTML = '';
 
-    const statusLabel = {
-      ready: { text: '✅ Conectado', color: 'var(--success)', bg: 'rgba(16,185,129,.12)' },
-      initializing: { text: '⚙️ Iniciando', color: 'var(--warning)', bg: 'rgba(245,158,11,.1)' },
-      qr_pending: { text: '📷 QR Pendiente', color: 'var(--warning)', bg: 'rgba(245,158,11,.1)' },
-      authenticated: { text: '🔐 Autenticado', color: 'var(--accent)', bg: 'rgba(99,102,241,.1)' },
-      disconnected: { text: '❌ Desconectado', color: 'var(--danger)', bg: 'rgba(239,68,68,.1)' },
-      auth_failure: { text: '🚫 Error Auth', color: 'var(--danger)', bg: 'rgba(239,68,68,.1)' },
-    };
+  if (all.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-3);font-size:13px;padding:8px">No hay sesiones en el sistema. <br>Crea una en la sección <b>Sesiones</b> y escanea el QR.</div>';
+    return;
+  }
 
-    // Preservar estado anterior de los checkboxes si los había
-    const checked = new Set(
-      Array.from(container.querySelectorAll('input[type=checkbox]:checked'))
-        .map(cb => cb.value)
-    );
-    const hasPreviousDOM = container.querySelector('input[type=checkbox]') !== null;
+  const statusLabel = {
+    ready: { text: '✅ Conectado', color: 'var(--success)', bg: 'rgba(16,185,129,.12)' },
+    initializing: { text: '⚙️ Iniciando', color: 'var(--warning)', bg: 'rgba(245,158,11,.1)' },
+    qr_pending: { text: '📷 QR Pendiente', color: 'var(--warning)', bg: 'rgba(245,158,11,.1)' },
+    authenticated: { text: '🔐 Autenticado', color: 'var(--accent)', bg: 'rgba(99,102,241,.1)' },
+    disconnected: { text: '❌ Desconectado', color: 'var(--danger)', bg: 'rgba(239,68,68,.1)' },
+    auth_failure: { text: '🚫 Error Auth', color: 'var(--danger)', bg: 'rgba(239,68,68,.1)' },
+  };
 
-    const sorted = [...all].sort((a, b) => {
-      if (a.status === 'ready' && b.status !== 'ready') return -1;
-      if (a.status !== 'ready' && b.status === 'ready') return 1;
-      return String(a.name || a.clientId || '').localeCompare(String(b.name || b.clientId || ''));
-    });
+  const sorted = [...all].sort((a, b) => {
+    if (a.status === 'ready' && b.status !== 'ready') return -1;
+    if (a.status !== 'ready' && b.status === 'ready') return 1;
+    return (a.name || a.clientId).localeCompare(b.name || b.clientId);
+  });
 
-    container.innerHTML = '';
+  sorted.forEach(s => {
+    const isReady = s.status === 'ready';
+    const sl = statusLabel[s.status] || { text: s.status, color: 'var(--text-3)', bg: 'rgba(255,255,255,.05)' };
+    
+    const div = document.createElement('div');
+    div.style.cssText = `display:flex;align-items:center;gap:12px;padding:10px 14px;
+      background:var(--surface-2);border-radius:10px;
+      border:1px solid ${isReady ? 'rgba(99,102,241,.2)' : 'rgba(255,255,255,.05)'};
+      opacity:${isReady ? '1' : '0.6'};margin-bottom:4px`;
 
-    sorted.forEach(s => {
-      if (!s || !s.clientId) return;
-      
-      const isReady = s.status === 'ready';
-      const sl = statusLabel[s.status] || { text: s.status || 'Desc.', color: 'var(--text-3)', bg: 'rgba(255,255,255,.05)' };
-      
-      // Si la tabla ya tenía datos antes, conservamos el check si el usuario lo marcó.
-      // Si se está dibujando por primera vez, las ready salen marcadas por defecto.
-      const isChecked = hasPreviousDOM ? checked.has(s.clientId) : isReady;
-      
-      const div = document.createElement('div');
-      div.style.cssText = `display:flex;align-items:center;gap:12px;padding:10px 14px;
-        background:var(--surface-2);border-radius:10px;
-        border:1px solid ${isReady ? 'rgba(99,102,241,.2)' : 'rgba(255,255,255,.05)'};
-        opacity:${isReady ? '1' : '0.6'};margin-bottom:4px`;
+    div.innerHTML = `
+      <input type="checkbox" value="${esc(s.clientId)}" id="chk-${esc(s.clientId)}"
+        ${isReady ? 'checked' : 'disabled'}
+        style="width:18px;height:18px;accent-color:var(--accent);cursor:${isReady ? 'pointer' : 'default'}" />
+      <label for="chk-${esc(s.clientId)}" style="flex:1;cursor:${isReady ? 'pointer' : 'default'};min-width:0">
+        <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-1)">${esc(s.name || s.clientId)}</div>
+        <div style="color:var(--text-3);font-size:11px">${s.phone ? '+52' + esc(s.phone) : esc(s.clientId)}</div>
+      </label>
+      <span style="font-size:10px;font-weight:600;padding:3px 10px;background:${sl.bg};color:${sl.color};border-radius:6px;text-transform:uppercase">${sl.text}</span>
+    `;
+    container.appendChild(div);
+  });
 
-      div.innerHTML = `
-        <input type="checkbox" value="${esc(s.clientId)}" id="chk-${esc(s.clientId)}"
-          ${isChecked && isReady ? 'checked' : ''} ${isReady ? '' : 'disabled'}
-          style="width:18px;height:18px;accent-color:var(--accent);cursor:${isReady ? 'pointer' : 'default'}" />
-        <label for="chk-${esc(s.clientId)}" style="flex:1;cursor:${isReady ? 'pointer' : 'default'};min-width:0">
-          <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-1)">${esc(s.name || s.clientId)}</div>
-          <div style="color:var(--text-3);font-size:11px">${s.phone ? '+52' + esc(s.phone) : esc(s.clientId)}</div>
-        </label>
-        <span style="font-size:10px;font-weight:600;padding:3px 10px;background:${sl.bg};color:${sl.color};border-radius:6px;text-transform:uppercase">${sl.text}</span>
-      `;
-      container.appendChild(div);
-    });
-
-    if (ready.length === 0) {
-      const warn = document.createElement('div');
-      warn.style.cssText = 'color:var(--warning);font-size:12px;margin-top:8px;padding:0 4px';
-      warn.innerHTML = '⚠️ Conecta tus números para poder iniciar el entrenamiento.';
-      container.appendChild(warn);
-    }
-  } catch (err) {
-    console.error("Error rendering training sessions: ", err);
-    const container = document.getElementById('tr-session-list');
-    if (container) container.innerHTML = `<div style="color:var(--danger);font-size:12px">Error cargando dispositivos: ${err.message}. Refresca la página.</div>`;
+  if (ready.length === 0) {
+    const warn = document.createElement('div');
+    warn.style.cssText = 'color:var(--warning);font-size:12px;margin-top:8px;padding:0 4px';
+    warn.innerHTML = '⚠️ Conecta tus números para poder iniciar el entrenamiento.';
+    container.appendChild(warn);
   }
 }
 
@@ -2216,77 +2022,4 @@ function formatEta(seconds) {
   if (h > 0) return `${h}h ${m}m`;
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// INTENSITY MODE
-// ═══════════════════════════════════════════════════════════════════════════════
-function intLog(type, msg) {
-  const c = document.getElementById('intensity-log');
-  if (!c) return;
-  const d = document.createElement('div'); d.className = 'log-entry';
-  d.innerHTML = `<span class="log-time">${now()}</span><span class="log-${type}">${esc(msg)}</span>`;
-  c.appendChild(d); c.scrollTop = c.scrollHeight;
-}
-
-async function startIntensity() {
-  const target = document.getElementById('int-target').value.trim();
-  const count = parseInt(document.getElementById('int-count').value);
-  const message = document.getElementById('int-msg').value.trim();
-  const delayMin = parseInt(document.getElementById('int-delay-min').value) || 0;
-  const delayMax = parseInt(document.getElementById('int-delay-max').value) || 0;
-
-  if (!target || target.length !== 10) return showToast('Ingresa un número objetivo válido de 10 dígitos', 'error');
-  if (!count || count < 1) return showToast('La cantidad debe ser mayor a 0', 'error');
-  if (!message) return showToast('Debes ingresar un mensaje', 'error');
-  if (delayMin > delayMax) return showToast('El delay mínimo no puede ser mayor al máximo', 'error');
-
-  const readySessions = Object.values(state.sessions).filter(s => s.status === 'ready');
-  if (readySessions.length === 0) return showToast('No hay sesiones conectadas disponibles para el ataque', 'error');
-
-  const btn = document.getElementById('btn-int-start');
-  const btnStop = document.getElementById('btn-int-stop');
-  btn.disabled = true;
-  btn.textContent = '🚀 Iniciando Ataque...';
-  
-  document.getElementById('int-progress-wrap').style.display = 'block';
-  document.getElementById('int-progress-bar').style.width = '0%';
-  document.getElementById('int-progress-text').textContent = "0 / " + count;
-  document.getElementById('int-sent').textContent = '0';
-  document.getElementById('int-errors').textContent = '0';
-
-  intLog('info', `🔥 Solicitando Modo Intensidad: ${count} msgs a ${target} usando ${readySessions.length} IPs/Líneas`);
-
-
-  try {
-    await apiPost('/api/intensity/start', {
-      targetNumber: target,
-      message: message,
-      count: count,
-      delayMinMs: delayMin * 1000,
-      delayMaxMs: delayMax * 1000
-    });
-    btn.style.display = 'none';
-    btnStop.style.display = '';
-  } catch (err) {
-    showToast(`Error: ${err.message}`, 'error');
-    intLog('err', `❌ Error fatal empezando: ${err.message}`);
-    btn.disabled = false;
-    btn.textContent = '🔥 Fuego a Discreción';
-  }
-}
-
-async function stopIntensity() {
-  const btnStop = document.getElementById('btn-int-stop');
-  btnStop.disabled = true;
-  btnStop.textContent = 'Deteniendo...';
-  try {
-    await apiPost('/api/intensity/stop', {});
-    intLog('info', '🛑 Solicitud de freno enviada...');
-  } catch (err) {
-    showToast(`Error al detener: ${err.message}`, 'error');
-  } finally {
-    btnStop.disabled = false;
-    btnStop.textContent = '⏹ Detener';
-  }
 }

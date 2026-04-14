@@ -158,9 +158,6 @@
         <button class="nav-item" id="nav-bulk" onclick="navigate('bulk')">
           <span class="icon">🚀</span> Envío Masivo XLSX
         </button>
-        <button class="nav-item" id="nav-intensity" onclick="navigate('intensity')" style="color:var(--danger)">
-          <span class="icon">🔥</span> Modo Intensidad
-        </button>
         <button class="nav-item" id="nav-validator" onclick="navigate('validator')">
           <span class="icon">🔍</span> Validador WhatsApp
         </button>
@@ -282,93 +279,6 @@
         </div>
       </section>
 
-      <!-- ── INTENSITY MODE ──────────────────────────────────────────────────────── -->
-      <section class="page" id="page-intensity">
-        <div class="section-header">
-          <div>
-            <div class="section-title" style="color:var(--danger)">🔥 Modo Intensidad</div>
-            <div class="section-sub">Ataque focalizado: Se usan TODAS las líneas conectadas para enviar al número destino.</div>
-          </div>
-        </div>
-        
-        <div class="stats-row" style="margin-bottom:20px">
-          <div class="stat-card">
-            <div class="stat-label">Progreso</div>
-            <div class="stat-value" id="int-progress-text">0 / 0</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label" style="color:var(--success)">Enviados</div>
-            <div class="stat-value" style="-webkit-text-fill-color:var(--success)" id="int-sent">0</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label" style="color:var(--danger)">Errores</div>
-            <div class="stat-value" style="-webkit-text-fill-color:var(--danger)" id="int-errors">0</div>
-          </div>
-        </div>
-
-        <div class="bulk-layout">
-          <!-- Configuración -->
-          <div style="display:flex;flex-direction:column;gap:20px">
-            <div class="card" style="border:1px dashed var(--danger)">
-              <div class="card-title">💣 Parámetros del Ataque</div>
-              
-              <div class="form-group">
-                <label class="form-label" for="int-target">Número Objetivo (10 dígitos)</label>
-                <input class="form-control" id="int-target" type="tel" placeholder="5512345678" />
-              </div>
-
-              <div class="form-group">
-                <label class="form-label" for="int-count">Cantidad Total de Mensajes</label>
-                <input class="form-control" id="int-count" type="number" value="50" min="1" max="1000" />
-                <div class="form-hint">Todas las sesiones conectadas rotarán hasta lograr esta cantidad.</div>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label" for="int-msg">Mensaje a Enviar</label>
-                <textarea class="form-control" id="int-msg" rows="4" placeholder="{Hola|Oye|Alerta}, esta es una prueba..."></textarea>
-                <div class="form-hint">Soporta Sintaxis <span style="font-weight:700">Spintax</span>: `{Opcion1|Opcion2}` para que varíe en cada envío.</div>
-              </div>
-
-              <div class="form-group" style="background:var(--surface-2);padding:10px;border-radius:8px">
-                <label class="form-label">Retraso entre disparos (seg)</label>
-                <div style="display:flex;gap:10px;align-items:center">
-                  <input class="form-control" id="int-delay-min" type="number" value="2" min="0" max="60" style="flex:1" />
-                  <span style="color:var(--text-3)">→</span>
-                  <input class="form-control" id="int-delay-max" type="number" value="5" min="0" max="60" style="flex:1" />
-                </div>
-              </div>
-
-              <div style="display:flex;gap:10px">
-                <button class="btn btn-primary" id="btn-int-start" onclick="startIntensity()" style="flex:1;background:var(--danger)">
-                  🔥 Fuego a Discreción
-                </button>
-                <button class="btn btn-secondary" id="btn-int-stop" onclick="stopIntensity()" style="flex:1;display:none">
-                  ⏹ Detener
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Log del ataque en vivo -->
-          <div class="card" style="padding:0;overflow:hidden;border:1px solid rgba(239, 68, 68, 0.3)">
-            <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-              <span class="card-title" style="margin-bottom:0">📡 Radar de Disparos</span>
-              <button class="btn btn-secondary btn-sm" onclick="document.getElementById('intensity-log').innerHTML=''">🗑 Limpiar</button>
-            </div>
-            
-            <div id="int-progress-wrap" style="padding:16px 20px 0;display:none">
-              <div class="progress-bar-wrapper">
-                <div class="progress-bar-fill" id="int-progress-bar" style="background:var(--danger)"></div>
-              </div>
-            </div>
-
-            <div class="progress-log" id="intensity-log" style="height:480px;border:none">
-              <div class="log-entry"><span class="log-info">Esperando inicialización de ráfagas...</span></div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <!-- ── BULK XLSX ───────────────────────────────────────────────────────────── -->
       <section class="page" id="page-bulk">
         <div class="section-header">
@@ -463,39 +373,41 @@
               <!-- ── Seguridad avanzada ── -->
               <div class="form-group">
                 <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--text-3);margin-bottom:10px;text-transform:uppercase">🛡️ Protección Anti-Bloqueo</div>
+
                 <div style="display:flex;gap:10px;margin-bottom:10px">
                   <div style="flex:1">
-                    <div class="form-label" style="font-size:10px;margin-bottom:4px">LÍMITE msg/día</div>
-                    <input class="form-control" id="bulk-daily-limit" type="number" value="150" min="10" max="1000" />
-                    <div class="form-hint" style="font-size:10px">Máximo por sesión</div>
+                    <div class="form-label" style="font-size:10px;margin-bottom:4px">LÍMITE por sesión/día</div>
+                    <input class="form-control" id="bulk-daily-limit" type="number" value="150" min="10" max="1000"
+                      title="Máx mensajes que puede enviar cada número en 24h antes de hacer pausa" />
+                    <div class="form-hint" style="font-size:10px">msgs máx/sesión/día</div>
                   </div>
                   <div style="flex:1">
-                    <div class="form-label" style="font-size:10px;margin-bottom:4px">PAUSA c/ N msgs</div>
-                    <input class="form-control" id="bulk-cooling-every" type="number" value="30" min="5" max="200" />
-                    <div class="form-hint" style="font-size:10px">Enfriamiento</div>
+                    <div class="form-label" style="font-size:10px;margin-bottom:4px">PAUSA cada N msgs</div>
+                    <input class="form-control" id="bulk-cooling-every" type="number" value="30" min="5" max="200"
+                      title="Cada cuántos mensajes la sesión activa descansa" />
+                    <div class="form-hint" style="font-size:10px">msgs antes de enfriar</div>
                   </div>
                   <div style="flex:1">
                     <div class="form-label" style="font-size:10px;margin-bottom:4px">DESCANSO (seg)</div>
-                    <input class="form-control" id="bulk-cooling-secs" type="number" value="120" min="30" max="600" />
-                    <div class="form-hint" style="font-size:10px">Segundos pausa</div>
+                    <input class="form-control" id="bulk-cooling-secs" type="number" value="120" min="30" max="600"
+                      title="Cuántos segundos descansa la sesión durante la pausa" />
+                    <div class="form-hint" style="font-size:10px">seg de pausa/enfriamiento</div>
                   </div>
                 </div>
               </div>
 
-              <div class="form-group" style="margin-top: 10px; background: rgba(99, 102, 241, 0.08); border: 1px dashed var(--accent); padding: 12px; border-radius: 8px;">
-                <label style="display:flex;align-items:center;cursor:pointer;gap:8px">
-                  <input type="checkbox" id="bulk-smart-mode" style="accent-color:var(--accent);width:18px;height:18px" />
-                  <span style="font-weight: 600; color:var(--text-1);">💡 Envío Inteligente (Saludo + Espera)</span>
+              <div class="form-group"
+                style="margin-top: 10px; background: rgba(99, 102, 241, 0.08); border: 1px dashed var(--accent); padding: 12px; border-radius: 8px;">
+                <label style="display:flex;align-items:center;cursor:pointer;gap:8px"
+                  title="Envía saludo dinámico y espera hasta que respondan.">
+                  <input type="checkbox" id="bulk-warmup" checked
+                    style="accent-color:var(--accent);width:18px;height:18px" />
+                  <span style="font-weight: 600; color:var(--text-1);">⚡ Módulo Antibloqueos (Saludo + 7min
+                    Espera)</span>
                 </label>
-                <div class="form-hint" style="margin-left: 26px; margin-top: 4px;">Envía saludo, espera respuesta hasta 7 min. Si contesta, envía mensaje principal al instante.</div>
-              </div>
-
-              <div class="form-group" style="margin-top: 10px; background: rgba(239, 68, 68, 0.08); border: 1px dashed var(--danger); padding: 12px; border-radius: 8px;">
-                <label style="display:flex;align-items:center;cursor:pointer;gap:8px">
-                  <input type="checkbox" id="bulk-ignore-lock" style="accent-color:var(--danger);width:18px;height:18px" />
-                  <span style="font-weight: 600; color:var(--text-1);">⚠️ Forzar Envío (Ignorar bloqueo entrenamiento)</span>
-                </label>
-                <div class="form-hint" style="margin-left: 26px; margin-top: 4px;">Usa esta opción solo si conoces el riesgo de baneo.</div>
+                <div class="form-hint" style="margin-left: 26px; margin-top: 4px;">Envía saludo temporalizado ("Buenos
+                  días {nombre}"). Se colocará en <b>espera asíncrona</b> por 7 minutos máximo. Si contesta, el mensaje
+                  principal se le envía al instante. Esto dilata y asegura que el 100% será orgánico.</div>
               </div>
 
               <div id="bulk-progress-section" style="display:none;margin-bottom:14px">
@@ -1083,6 +995,7 @@
           </div>
         </div>
 
+        <!-- Stats -->
         <div class="stats-row" style="margin-bottom:20px">
           <div class="stat-card">
             <div class="stat-label">Total validados</div>
@@ -1103,77 +1016,89 @@
         </div>
 
         <div class="bulk-layout">
+          <!-- Panel de configuración -->
           <div style="display:flex;flex-direction:column;gap:20px">
-              <div class="card">
-                <div class="card-title">⚙️ Configuración</div>
-                <div class="form-group">
-                  <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(99,179,237,.08);border:1px solid rgba(99,179,237,.2);border-radius:10px">
-                    <span style="font-size:20px">🔄</span>
-                    <div>
-                      <div style="font-size:13px;font-weight:600;color:var(--text-1)">Rotación automática</div>
-                      <div id="val-sessions-info" style="font-size:11px;color:var(--text-3);margin-top:2px">Usa todas las sesiones conectadas</div>
-                    </div>
-                  </div>
-                </div>
-                <div class="form-group" style="margin-top:15px">
-                  <div style="font-size:10px;font-weight:700;color:var(--text-3);margin-bottom:8px;text-transform:uppercase">🛡️ Protección Anti-Bloqueo</div>
-                  <div style="display:flex;gap:10px">
-                    <div style="flex:1">
-                      <div class="form-label" style="font-size:10px;margin-bottom:4px">PAUSA C/ N NÚMS</div>
-                      <input class="form-control" id="val-cooling-every" type="number" value="100" min="10" max="500" />
-                    </div>
-                    <div style="flex:1">
-                      <div class="form-label" style="font-size:10px;margin-bottom:4px">DESCANSO (seg)</div>
-                      <input class="form-control" id="val-cooling-secs" type="number" value="60" min="10" max="600" />
-                    </div>
-                  </div>
-                  <div class="form-hint" style="font-size:10px;margin-top:5px">Recomendado: Pausa cada 100-200 números</div>
-                </div>
-              </div>
 
             <div class="card">
-              <div class="card-title">📋 Validación</div>
+              <div class="card-title">⚙️ Configuración</div>
               <div class="form-group">
-                <label class="form-label">Número único</label>
-                <div style="display:flex;gap:8px">
-                  <input class="form-control" id="val-single-input" type="tel" placeholder="5512345678" style="flex:1" />
-                  <button class="btn btn-primary" id="btn-val-single" onclick="validateSingle()">Verificar</button>
+                <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(99,179,237,.08);border:1px solid rgba(99,179,237,.2);border-radius:10px">
+                  <span style="font-size:20px">🔄</span>
+                  <div>
+                    <div style="font-size:13px;font-weight:600;color:var(--text-1)">Rotación automática de sesiones</div>
+                    <div id="val-sessions-info" style="font-size:11px;color:var(--text-3);margin-top:2px">Usa todas las sesiones conectadas disponibles</div>
+                  </div>
                 </div>
+                <div class="form-hint" style="margin-top:8px">No se envía ningún mensaje. Solo se consulta si el número está en WhatsApp.</div>
               </div>
-              <div style="border-top:1px solid var(--border);margin:16px 0"></div>
-              <div class="form-group">
-                <label class="form-label">Lista masiva</label>
-                <textarea class="form-control" id="val-bulk-input" style="min-height:120px;font-family:monospace;font-size:13px" placeholder="5512345678&#10;5598765432"></textarea>
-              </div>
-              <div id="val-progress-wrap" style="display:none;margin-bottom:14px">
-                <div class="progress-bar-wrapper">
-                  <div class="progress-bar-fill" id="val-progress-bar"></div>
-                </div>
-                <div id="val-progress-text" style="font-size:11px;text-align:right;margin-top:4px">0 / 0</div>
-              </div>
-              <button class="btn btn-primary" id="btn-val-bulk" onclick="validateBulk()" style="width:100%">🔍 Validar Masivo</button>
             </div>
 
-            <div class="card" style="border:1px solid var(--accent)">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                <div class="card-title" style="margin-bottom:0">📂 Historial DB</div>
-                <button class="btn btn-secondary btn-sm" onclick="loadValidationHistory()">🔄</button>
+
+            <div class="card">
+              <div class="card-title">📋 Números a validar</div>
+              <div class="form-group">
+                <label class="form-label">Un número único</label>
+                <div style="display:flex;gap:8px">
+                  <input class="form-control" id="val-single-input" type="tel"
+                    placeholder="5512345678" style="flex:1" />
+                  <button class="btn btn-primary" id="btn-val-single" onclick="validateSingle()">Verificar</button>
+                </div>
+                <div class="form-hint">Solo 10 dígitos (México). No incluyas el +52.</div>
               </div>
-              <div style="max-height:200px;overflow:auto">
-                <table class="data-table" style="font-size:11px">
-                  <thead><tr><th>Número</th><th>WA</th><th>Fecha</th></tr></thead>
-                  <tbody id="val-db-history-tbody"></tbody>
-                </table>
+
+              <div style="border-top:1px solid var(--border);margin:16px 0"></div>
+
+              <div class="form-group">
+                <label class="form-label">Lista masiva (uno por línea)</label>
+                <textarea class="form-control" id="val-bulk-input" style="min-height:160px;font-family:monospace;font-size:13px"
+                  placeholder="5512345678&#10;5598765432&#10;5511223344"></textarea>
+                <div class="form-hint">Máximo 500 números por lote.</div>
               </div>
+
+              <!-- Barra de progreso -->
+              <div id="val-progress-wrap" style="display:none;margin-bottom:14px">
+                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px">
+                  <span style="color:var(--text-2)">Validando…</span>
+                  <span id="val-progress-text" style="color:var(--accent)">0 / 0</span>
+                </div>
+                <div class="progress-bar-wrapper">
+                  <div class="progress-bar-fill" id="val-progress-bar" style="transition:width .3s ease"></div>
+                </div>
+              </div>
+
+              <button class="btn btn-primary" id="btn-val-bulk" onclick="validateBulk()" style="width:100%">
+                🔍 Iniciar Validación Masiva
+              </button>
             </div>
           </div>
 
+          <!-- Tabla de resultados -->
           <div class="card" style="padding:0;overflow:hidden">
-            <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-weight:600">📊 Resultados en vivo</div>
-            <div style="max-height:500px;overflow:auto">
-              <table class="data-table">
-                <thead><tr><th>#</th><th>Número</th><th>WhatsApp</th><th>Hora</th></tr></thead>
-                <tbody id="val-tbody"></tbody>
+            <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+              <span class="card-title" style="margin-bottom:0">📊 Resultados</span>
+              <div style="display:flex;gap:8px">
+                <select class="form-control" id="val-filter" onchange="applyValidatorFilter()"
+                  style="width:160px;padding:6px 10px;font-size:13px">
+                  <option value="">Todos</option>
+                  <option value="si">✅ Con WhatsApp</option>
+                  <option value="no">❌ Sin WhatsApp</option>
+                </select>
+              </div>
+            </div>
+            <div style="overflow:auto;max-height:560px">
+              <table class="data-table" id="val-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Número</th>
+                    <th>WhatsApp</th>
+                    <th>JID de WA</th>
+                    <th>Hora</th>
+                  </tr>
+                </thead>
+                <tbody id="val-tbody">
+                  <tr><td colspan="5" style="text-align:center;color:var(--text-3);padding:40px">Ingresa números y presiona Validar.</td></tr>
+                </tbody>
               </table>
             </div>
           </div>
@@ -1290,62 +1215,6 @@
   </div>
 
   <div class="toast-container" id="toast-container"></div>
-
-  <!-- ── MODAL: DIAGNÓSTICO DE HISTORIAL ──────────────────────────────────────── -->
-  <div class="modal-overlay" id="modal-history-check" style="z-index:2000">
-    <div class="modal" style="max-width:520px;text-align:center">
-      <div style="font-size:48px;margin-bottom:12px">📱</div>
-      <div class="modal-title" style="font-size:20px">Nuevo número conectado</div>
-      <div id="history-check-session-name" style="color:var(--accent);font-weight:700;font-size:16px;margin-bottom:8px"></div>
-      <p style="color:var(--text-2);font-size:14px;margin-bottom:28px;line-height:1.6">
-        Para proteger esta línea contra bloqueos, necesitamos saber si este número<br>
-        <strong style="color:var(--text-1)">ya tiene conversaciones activas o es completamente nuevo.</strong>
-      </p>
-
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
-        <!-- Opción A: Número nuevo -->
-        <div id="history-opt-new"
-          onclick="selectHistoryOption(false)"
-          style="border:2px solid rgba(251,191,36,.3);border-radius:16px;padding:24px 16px;cursor:pointer;transition:all .2s;background:rgba(251,191,36,.04)"
-          onmouseover="this.style.borderColor='rgba(251,191,36,.8)';this.style.background='rgba(251,191,36,.08)'"
-          onmouseout="this.style.borderColor='rgba(251,191,36,.3)';this.style.background='rgba(251,191,36,.04)'">
-          <div style="font-size:36px;margin-bottom:10px">🆕</div>
-          <div style="font-weight:700;color:var(--text-1);font-size:15px;margin-bottom:8px">Número Nuevo</div>
-          <div style="font-size:12px;color:var(--text-3);line-height:1.5">
-            Sin conversaciones previas.<br>
-            <strong style="color:#fbbf24">Se iniciará entrenamiento automático</strong><br>
-            (genera historial antes de enviar campañas)
-          </div>
-        </div>
-
-        <!-- Opción B: Ya tiene historial -->
-        <div id="history-opt-existing"
-          onclick="selectHistoryOption(true)"
-          style="border:2px solid rgba(34,197,94,.3);border-radius:16px;padding:24px 16px;cursor:pointer;transition:all .2s;background:rgba(34,197,94,.04)"
-          onmouseover="this.style.borderColor='rgba(34,197,94,.8)';this.style.background='rgba(34,197,94,.08)'"
-          onmouseout="this.style.borderColor='rgba(34,197,94,.3)';this.style.background='rgba(34,197,94,.04)'">
-          <div style="font-size:36px;margin-bottom:10px">✅</div>
-          <div style="font-weight:700;color:var(--text-1);font-size:15px;margin-bottom:8px">Ya tiene historial</div>
-          <div style="font-size:12px;color:var(--text-3);line-height:1.5">
-            Número con conversaciones activas.<br>
-            <strong style="color:#22c55e">Habilitado para Nivel 1</strong><br>
-            (hasta 50 mensajes/día de forma segura)
-          </div>
-        </div>
-      </div>
-
-      <div style="background:rgba(99,102,241,.08);border-radius:10px;padding:12px 16px;font-size:12px;color:var(--text-3);text-align:left;margin-bottom:20px">
-        💡 <strong>¿Por qué importa?</strong> WhatsApp rastrea el comportamiento de los números.
-        Un número sin historial que envía muchos mensajes es marcado como spam. El entrenamiento
-        genera conversaciones naturales para "calentar" la línea de forma segura.
-      </div>
-
-      <button class="btn btn-secondary" onclick="closeModal('modal-history-check')" style="width:100%;font-size:13px">
-        Decidir más tarde (la sesión quedará sin configurar)
-      </button>
-    </div>
-  </div>
-
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>
 </body>
