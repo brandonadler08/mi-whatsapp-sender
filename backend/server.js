@@ -136,6 +136,7 @@ sessionManager.on('session_removed', d => io.emit('session:removed', d));
 // ── Lógica Asíncrona Masiva (Bandeja Inteligente) ────────────────────────────
 const pendingPayloads = new Map();
 const activeBatches = new Map();
+const imageStore = new Map();
 const rrAsesores = {};
 
 function prohibitAsesor(req, res, next) {
@@ -912,12 +913,80 @@ app.post('/api/parse-xlsx', auth.requireAuth, prohibitAsesor, upload.single('fil
     const raw = XLSX.utils.sheet_to_json(ws, { defval: '' });
 
     if (raw.length === 0) return res.status(422).json({ error: 'El archivo está vacío' });
+    res.json(raw);
+  } catch (err) {
+    res.status(500).json({ error: 'Error al procesar XLSX: ' + err.message });
+  }
+});
+
+app.post('/api/send-bulk-xlsx', auth.requireAuth, prohibitAsesor, async (req, res) => {
+  const { name, template, delayMin, delayMax, clientId, warmup, coolEvery, coolMs, maxPerDay, ignoreLock, imageKey } = req.body;
+  const rows = JSON.parse(req.body.rows || '[]');
+
+  if (bulkState.running && !ignoreLock) {
+    return res.status(409).json({ error: 'Ya hay un envío masivo en curso' });
+  }
+
+  let bulkImageBuffer = null;
+  let bulkImageMimetype = null;
+  if (imageKey) {
+    const img = imageStore.get(imageKey);
+    if (img) {
+      bulkImageBuffer = img.buffer;
+      bulkImageMimetype = img.mimetype;
+    }
+  }
+
+  const batchId = genId();
+  const dMin = parseInt(delayMin) || 3000;
+  const dMax = parseInt(delayMax) || 7000;
+  const coolEveryNum = parseInt(coolEvery) || 100;
+  const coolMsNum = parseInt(coolMs) || 60000;
+
+  activeBatches.set(batchId, {
+    id: batchId, name, total: rows.length, done: 0, sent: 0, errors: 0,
+    owner_id: req.user.id, started_at: new Date().toISOString()
+  });
+
+  if (dbReady) dbModule.stmts.insertBatch({
+    id: batchId, name, total: rows.length, owner_id: req.user.id,
+    template, started_at: new Date().toISOString()
+  });
+
+  bulkState.running = true;
+  bulkState.batchId = batchId;
+  bulkState.stopRequested = false;
+
+  res.json({ success: true, batchId, total: rows.length });
+
   // ── Async bulk send ───────────────────────────────────────────────────────
   (async () => {
-          });
+    const sessionCounters = {};
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (bulkState.stopRequested) break;
+
+      const numero = String(row.numero || '').trim();
+      const cuenta = String(row.cuenta || '').trim();
+
+      if (!numero) {
+        const entry = makeEntry(batchId, row, 'Número vacío', 'N/A', 'error', 'Número no proporcionado');
+        addReport(entry);
+        const batch = activeBatches.get(batchId);
+        if (batch) { batch.errors++; batch.done++; checkBatchComplete(batchId); }
+        continue;
+      }
+
+      const mensajeFinal = applySpintax(applyTemplate(template, row));
+      let session = null;
+
+      if (clientId === 'round-robin') {
+        session = getNextReadySession(req.user.id);
+        if (!session) {
+          const entry = makeEntry(batchId, row, mensajeFinal, 'RR', 'error', 'No hay sesiones listas');
+          addReport(entry);
           const batch = activeBatches.get(batchId);
-          batch.errors++; batch.done++;
-          checkBatchComplete(batchId);
+          if (batch) { batch.errors++; batch.done++; checkBatchComplete(batchId); }
           continue;
         }
       } else {
