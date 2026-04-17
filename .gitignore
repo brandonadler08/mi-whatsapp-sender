@@ -16,6 +16,9 @@ backend/.wwebjs_cache/
 # ── SQLite database (runtime data) ────────────────────────────────────────────
 backend/data/*.db
 
+# ── Authenticacion Baileys (NUNCA SUBIR) ──────────────────────────────────────
+backend/data/auth/
+
 # ── OS / Editor ───────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
