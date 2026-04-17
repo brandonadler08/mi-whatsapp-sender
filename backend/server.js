@@ -1694,6 +1694,29 @@ function friendlyError(msg = '') {
 }
 
 function csvVal(v) {
-  const s = String(v || '').replace(/"/g, '""');
-  return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s}"` : s;
+  const s = String(v || '').replace(/\"/g, '\"\"');
+  return (s.includes(',') || s.includes('\"') || s.includes('\\n')) ? `\"${s}\"` : s;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STARTUP
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function start() {
+  try {
+    // Initialize database
+    await initDb();
+
+    // Start HTTP server
+    httpServer.listen(PORT, () => {
+      console.log(`✅ Server running on port ${PORT}`);
+      console.log(`📱 WhatsApp Sender ready`);
+      console.log(`🔗 http://localhost:${PORT}`);
+    });
+  } catch (err) {
+    console.error('❌ Failed to start server:', err);
+    process.exit(1);
+  }
+}
+
+start();
