@@ -145,9 +145,9 @@ async function executePayload(numero, isReply) {
   if (!job) return;
 
   pendingPayloads.delete(numero);
-  clearTimeout(job.timeoutId);
+  clearTimeout(job.timerId);
 
-  const { batchId, sessionClientId, mensajeFinal, entry } = job;
+  const { batchId, sessionClientId, mensajeFinal, entry, imageBuffer, imageMimetype } = job;
   const batch = activeBatches.get(batchId);
 
   if (!batch) return;
@@ -158,11 +158,11 @@ async function executePayload(numero, isReply) {
 
     // --- Mejora Anti-Bloqueo: Simular Visto antes de enviar principal ---
     try {
-      await sessionManager.readMessages(sessionClientId, `${numero}@s.whatsapp.net`, []);
+      await sessionManager.readMessages(sessionClientId, `${entry.numero}@s.whatsapp.net`, []);
       await new Promise(r => setTimeout(r, 1000 + Math.random() * 2000));
     } catch (e) { }
 
-    await sessionManager.sendMessage(sessionClientId, numero, mensajeFinal);
+    await sessionManager.sendMessage(sessionClientId, entry.numero, mensajeFinal, imageBuffer || null, imageMimetype || null);
     entry.status = 'sent';
     entry.timestamp = new Date().toISOString();
     batch.sent++;
@@ -214,6 +214,11 @@ sessionManager.on('new_reply', (replyData) => {
 
     const replyCount = dbModule.stmts.getReplyCountFromNumber(replyData.clientId, replyData.from_number);
 
+    // Buscar el nombre del cliente en mensajes enviados (usando Cliente_Unico / cuenta del XLSX)
+    const cuenta = dbModule.stmts.getCuentaByNumero(replyData.from_number)
+      || (prevReply && prevReply.cuenta)
+      || null;
+
     dbModule.stmts.insertReply({
       id: replyData.id,
       session_id: replyData.clientId,
@@ -221,8 +226,13 @@ sessionManager.on('new_reply', (replyData) => {
       author_name: replyData.author_name,
       message_text: replyData.message_text,
       timestamp: replyData.timestamp,
-      asesor_id: assignedAsesorId
+      asesor_id: assignedAsesorId,
+      cuenta: cuenta
     });
+
+    // Enriquecer el objeto que se emite al frontend
+    replyData.cuenta = cuenta;
+
 
     // --- Inteligencia Artificial: Auto-Reply solo para CLIENTES NUEVOS (Temporalmente deshabilitado) ---
     /*
@@ -286,47 +296,93 @@ app.post('/api/check-number', auth.requireAuth, prohibitAsesor, async (req, res)
   }
 });
 
-// Validar múltiples números (resultado en tiempo real por Socket.io)
+// Estado del validador (permite detenerlo)
+const validatorState = { running: false, stopRequested: false };
+
+// Validar múltiples números — sin límite fijo, procesado en el servidor con socket.io
 app.post('/api/check-numbers', auth.requireAuth, prohibitAsesor, async (req, res) => {
-  const { clientId, numeros } = req.body;
-  if (!clientId || !Array.isArray(numeros) || numeros.length === 0)
-    return res.status(400).json({ error: 'clientId y numeros[] son requeridos' });
-  if (numeros.length > 500)
-    return res.status(400).json({ error: 'Máximo 500 números por lote' });
+  const { numeros } = req.body; // clientId ya no es requerido — usamos rotación
+  if (!Array.isArray(numeros) || numeros.length === 0)
+    return res.status(400).json({ error: 'numeros[] es requerido' });
+  if (numeros.length > 50000)
+    return res.status(400).json({ error: 'Máximo 50,000 números por lote' });
 
-  const session = sessionManager.getSession(clientId);
-  if (!session || session.status !== 'ready')
-    return res.status(409).json({ error: 'La sesión no está disponible o no está conectada' });
+  if (validatorState.running)
+    return res.status(409).json({ error: 'Ya hay una validación en curso. Detén la actual primero.' });
 
-  // Respuesta inmediata para no bloquear HTTP
-  res.json({ success: true, total: numeros.length });
+  // Sesiones disponibles para rotación
+  let readySessions = sessionManager.getSessions().filter(s => s.status === 'ready');
+  if (req.user.role !== 'superadmin' && dbReady) {
+    const owned = dbModule.stmts.getSessionsByOwner(req.user.id).map(r => r.client_id);
+    readySessions = readySessions.filter(s => owned.includes(s.clientId));
+  }
+  if (readySessions.length === 0)
+    return res.status(409).json({ error: 'No hay sesiones conectadas disponibles para validar' });
 
-  // Procesar de forma asíncrona emitiendo progreso por socket
+  // Deduplicar
+  const unique = [...new Set(numeros.map(n => String(n).trim()))];
+
+  // Respuesta inmediata
+  res.json({ success: true, total: unique.length, sessions: readySessions.length });
+
+  // Procesar de forma asíncrona con rotación de sesiones
   (async () => {
-    let withWA = 0;
-    const results = [];
-    for (let i = 0; i < numeros.length; i++) {
-      const r = await sessionManager.checkNumber(clientId, String(numeros[i]).trim());
+    validatorState.running = true;
+    validatorState.stopRequested = false;
+    let withWA = 0, withoutWA = 0, errors = 0;
+    let rrIdx = 0;
+
+    io.emit('validator:start', { total: unique.length, sessions: readySessions.length });
+
+    for (let i = 0; i < unique.length; i++) {
+      if (validatorState.stopRequested) {
+        io.emit('validator:stopped', { done: i, total: unique.length, withWA, withoutWA, errors });
+        break;
+      }
+
+      // Rotación round-robin de sesiones
+      const session = readySessions[rrIdx % readySessions.length];
+      rrIdx++;
+
+      let r;
+      try {
+        r = await sessionManager.checkNumber(session.clientId, unique[i]);
+      } catch (err) {
+        r = { numero: unique[i], exists: false, error: err.message };
+      }
+
       if (r.exists) withWA++;
-      results.push({ ...r, timestamp: new Date().toISOString() });
+      else if (r.error) errors++;
+      else withoutWA++;
 
       io.emit('validator:progress', {
         index: i + 1,
-        total: numeros.length,
-        result: { ...r, timestamp: new Date().toISOString() }
+        total: unique.length,
+        result: { ...r, timestamp: new Date().toISOString() },
+        withWA, withoutWA, errors
       });
 
-      // Delay anti-spam entre 700ms y 1.3s para no saturar WhatsApp
-      if (i < numeros.length - 1) await sleep(700 + Math.floor(Math.random() * 600));
+      // Delay anti-spam: entre 400ms y 800ms
+      if (i < unique.length - 1 && !validatorState.stopRequested) {
+        await sleep(400 + Math.floor(Math.random() * 400));
+      }
     }
-    io.emit('validator:complete', {
-      total: numeros.length,
-      withWA,
-      withoutWA: numeros.length - withWA,
-      results
-    });
+
+    validatorState.running = false;
+    if (!validatorState.stopRequested) {
+      io.emit('validator:complete', { total: unique.length, withWA, withoutWA, errors });
+    }
   })();
 });
+
+// Detener validación en curso
+app.post('/api/check-numbers/stop', auth.requireAuth, prohibitAsesor, (req, res) => {
+  if (!validatorState.running)
+    return res.status(409).json({ error: 'No hay validación en curso' });
+  validatorState.stopRequested = true;
+  res.json({ success: true, message: 'Detención solicitada' });
+});
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTH routes (public — no token required)
@@ -428,11 +484,14 @@ app.post('/api/auth/change-password', auth.requireAuth, async (req, res) => {
 // REST API — Sessions  [PROTECTED]
 // ═══════════════════════════════════════════════════════════════════════════════
 
-app.get('/api/sessions', auth.requireAuth, prohibitAsesor, (_req, res) => {
-  const { user } = _req;
+app.get('/api/sessions', auth.requireAuth, prohibitAsesor, (req, res) => {
+  const { user } = req;
+  const isTrainingPage = req.query.context === 'training';
   let sessions = sessionManager.getSessions();
 
-  if (user.role !== 'superadmin' && dbReady) {
+  // Permitir visibilidad total para admins en el contexto de entrenamiento
+  // o si el usuario es superadmin
+  if (user.role !== 'superadmin' && !isTrainingPage && dbReady) {
     const owned = dbModule.stmts.getSessionsByOwner(user.id).map(r => r.client_id);
     sessions = sessions.filter(s => owned.includes(s.clientId));
   }
@@ -448,30 +507,28 @@ app.post('/api/sessions', auth.requireAuth, prohibitAsesor, async (req, res) => 
   if (sessionManager.hasSession(id))
     return res.status(409).json({ error: `La sesión "${id}" ya existe` });
 
-  /*
-  // ── Auto-assign proxy if not provided ──
-  let sessionProxy = proxy || null;
-  if (!sessionProxy && dbReady) {
-    sessionProxy = dbModule.stmts.getAvailableProxy(id);
+  try {
+    const session = await sessionManager.createSession(id, label, { proxy });
+
+    if (dbReady) {
+      dbModule.stmts.insertSession({
+        clientId: id,
+        label: label || id,
+        owner_id: req.user.id,
+        proxy: proxy || null,
+        created_at: new Date().toISOString()
+      });
+
+      // Si se cargó un proxy, marcarlo como usado en el pool si existe
+      if (proxy) {
+        dbModule.stmts.updateProxySession(id, proxy);
+      }
+    }
+    
+    res.json({ success: true, clientId: id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  */
-  let sessionProxy = null;
-
-  if (dbReady) {
-    dbModule.stmts.insertSession({
-      clientId: id,
-      label: label || id,
-      owner_id: req.user.id,
-      // proxy: sessionProxy,
-      created_at: new Date().toISOString()
-    });
-  }
-
-  sessionManager.createSession(id, { label: label || id, proxy: sessionProxy }).catch(err => {
-    io.emit('session:error', { clientId: id, error: err.message });
-  });
-
-  res.json({ success: true, clientId: id, proxyUsed: sessionProxy });
 });
 
 app.delete('/api/sessions/:id', auth.requireAuth, prohibitAsesor, async (req, res) => {
@@ -527,7 +584,7 @@ app.post('/api/sessions/:clientId/settings', auth.requireAuth, prohibitAsesor, (
 
 // ── Single send ───────────────────────────────────────────────────────────────
 app.post('/api/send', auth.requireAuth, async (req, res) => {
-  const { clientId, to, message } = req.body;
+  const { clientId, to, message, imageKey } = req.body;
   if (!clientId || !to || !message)
     return res.status(400).json({ error: 'clientId, to y message son requeridos' });
 
@@ -821,7 +878,8 @@ app.post('/api/send-bulk-xlsx', auth.requireAuth, prohibitAsesor, async (req, re
       return res.status(403).json({ error: 'No tienes permiso para usar esta sesión' });
   }
 
-  // Verificar bloqueo de maduración (entrenamiento en curso o periodo de espera)
+  // Eliminar restricción: permitir envíos masivos incluso si hay entrenamiento en curso o maduración
+  /*
   if (!useRotation) {
     const lock = isSessionLocked(clientId);
     if (lock) {
@@ -831,6 +889,7 @@ app.post('/api/send-bulk-xlsx', auth.requireAuth, prohibitAsesor, async (req, re
       });
     }
   }
+  */
 
   if (dbReady) {
     dbModule.stmts.insertBatch({
@@ -880,7 +939,8 @@ app.post('/api/send-bulk-xlsx', auth.requireAuth, prohibitAsesor, async (req, re
         io.emit('bulk:stopped', { batchId, batchName: name, doneAt: i, total: rows.length });
         break;
       }
-      const { numero, cuenta } = row;
+      const { numero, cuenta } = rows[i];
+      const row = rows[i];
       const mensajeFinal = applySpintax(applyTemplate(template, row));
 
       let session;
@@ -1546,15 +1606,14 @@ app.get('*', (_req, res) => {
       console.log(`🔄 Restaurando ${saved.length} sesión(es) guardada(s)...`);
       for (const s of saved) {
         try {
-          const session = await sessionManager.createSession(s.client_id, s.label);
-          // Restaurar configuración avanzada (Temporalmente deshabilitado)
-          /*
-          session.proxy = s.proxy;
-          session.ai_enabled = s.ai_enabled === 1;
-          session.ai_prompt = s.ai_prompt;
-          */
+          // Restaurar configuración avanzada (IA/Proxy)
+          const session = await sessionManager.createSession(s.client_id, s.label, {
+            proxy: s.proxy,
+            ai_enabled: s.ai_enabled === 1,
+            ai_prompt: s.ai_prompt
+          });
 
-          console.log(`  ✓ Restaurando sesión "${s.client_id}"`);
+          console.log(`  ✓ Restaurando sesión "${s.client_id}" ${s.proxy ? `(Proxy: ${s.proxy})` : ''}`);
           await sleep(1500);
         } catch (err) {
           console.error(`  ✖ No se pudo restaurar "${s.client_id}":`, err.message);

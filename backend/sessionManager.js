@@ -15,7 +15,7 @@ class SessionManager extends EventEmitter {
     this.setMaxListeners(50);
   }
 
-  async createSession(clientId, label = '') {
+  async createSession(clientId, label = '', settings = {}) {
     if (this.sessions.has(clientId)) {
       throw new Error(`Session "${clientId}" already exists`);
     }
@@ -26,9 +26,9 @@ class SessionManager extends EventEmitter {
       phone: null,
       name: label || clientId,
       qr: null,
-      proxy: null,      // se cargará desde la BD luego o por parámetro
-      ai_enabled: false,
-      ai_prompt: null,
+      proxy: settings.proxy || null,
+      ai_enabled: !!settings.ai_enabled,
+      ai_prompt: settings.ai_prompt || null,
       createdAt: new Date().toISOString()
     };
     this.sessions.set(clientId, sessionData);
@@ -44,14 +44,19 @@ class SessionManager extends EventEmitter {
 
       const { version } = await fetchLatestBaileysVersion();
 
-      /* 
-      // Configurar Proxy si existe (Temporalmente deshabilitado)
+      // Configurar Proxy si existe
       let agent;
       if (sessionData.proxy) {
-        if (sessionData.proxy.startsWith('socks')) agent = new SocksProxyAgent(sessionData.proxy);
-        else agent = new HttpsProxyAgent(sessionData.proxy);
+        try {
+          if (sessionData.proxy.startsWith('socks')) {
+            agent = new SocksProxyAgent(sessionData.proxy);
+          } else {
+            agent = new HttpsProxyAgent(sessionData.proxy);
+          }
+        } catch (err) {
+          console.error(`[${clientId}] Error al configurar proxy:`, err.message);
+        }
       }
-      */
 
       const sock = makeWASocket({
         version,
@@ -59,7 +64,7 @@ class SessionManager extends EventEmitter {
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
         browser: Browsers.macOS('Desktop'),
-        // agent, // Inyectar el agente del proxy
+        agent, // Inyectar el agente del proxy
       });
 
       sessionData.sock = sock;
@@ -186,45 +191,56 @@ class SessionManager extends EventEmitter {
     if (!session) throw new Error(`Session "${clientId}" not found`);
     if (session.status !== 'ready') throw new Error(`Session "${clientId}" is not ready`);
 
-    // Normalización para 52 vs 521 (Mexico particularidad)
-    const n = String(to).replace(/\D/g, '');
-    let localN = n;
-    if (n.length === 13 && n.startsWith('521')) localN = n.slice(3);
-    else if (n.length === 12 && n.startsWith('52')) localN = n.slice(2);
-    else if (n.length === 11 && n.startsWith('1')) localN = n.slice(1);
+    // Normalización: permitimos números de cualquier país
+    const cleanTo = String(to).replace(/\D/g, '');
 
-    if (localN.length !== 10) throw new Error(`Número inválido (no tiene 10 dígitos)`);
-
-    const variations = [`52${localN}@s.whatsapp.net`, `521${localN}@s.whatsapp.net`];
-    let jid = variations[0];
-
-    // Verificar si existe en WA usando onWhatsApp de Baileys
-    try {
-      for (let v of variations) {
-        const lookup = await session.sock.onWhatsApp(v);
-        if (lookup && lookup.length > 0 && lookup[0].exists) {
-          jid = lookup[0].jid;
-          break;
-        }
-      }
-    } catch (err) {
-      console.warn(`No se pudo resolver ${to}, usando JID por defecto.`);
+    if (!cleanTo || cleanTo.length < 8) {
+      throw new Error(`Número inválido (${to})`);
     }
+
+    // Envío directo sin búsqueda onWhatsApp (evita cuelgues)
+    let jidPrimary = `${cleanTo}@s.whatsapp.net`;
+    let jidFallback = null;
+
+    // Lógica particular para México (52 vs 521)
+    if (cleanTo.length === 13 && cleanTo.startsWith('521')) {
+      jidFallback = `52${cleanTo.substring(3)}@s.whatsapp.net`;
+    } else if (cleanTo.length === 12 && cleanTo.startsWith('52')) {
+      jidFallback = `521${cleanTo.substring(2)}@s.whatsapp.net`;
+    }
+
+    let jid = jidPrimary;
 
     // --- Mejora Anti-Bloqueo: Simular Escritura ---
     await this.simulateTyping(clientId, jid, (message || '').length);
 
     let result;
-    if (imageBuffer) {
-      // Enviar imagen con caption
-      result = await session.sock.sendMessage(jid, {
-        image: imageBuffer,
-        caption: message || '',
-        mimetype: imageMimetype || 'image/jpeg',
-      });
-    } else {
-      // Enviar solo texto
-      result = await session.sock.sendMessage(jid, { text: message });
+    try {
+      if (imageBuffer) {
+        result = await session.sock.sendMessage(jid, {
+          image: imageBuffer,
+          caption: message || '',
+          mimetype: imageMimetype || 'image/jpeg',
+        });
+      } else {
+        result = await session.sock.sendMessage(jid, { text: message });
+      }
+    } catch (err) {
+      if (!jidFallback) {
+        throw new Error(`Error al enviar: ${err.message}`);
+      }
+      
+      console.warn(`[${clientId}] Reintentando con JID fallback (${jidFallback})...`);
+      jid = jidFallback;
+      if (imageBuffer) {
+        result = await session.sock.sendMessage(jid, {
+          image: imageBuffer,
+          caption: message || '',
+          mimetype: imageMimetype || 'image/jpeg',
+        });
+      } else {
+        result = await session.sock.sendMessage(jid, { text: message });
+      }
     }
 
     return { success: true, messageId: result.key.id, chatId: jid };
@@ -321,30 +337,41 @@ class SessionManager extends EventEmitter {
     if (!session) throw new Error(`Sesión "${clientId}" no encontrada`);
     if (session.status !== 'ready') throw new Error(`Sesión "${clientId}" no está lista`);
 
-    // Normalizar a 10 dígitos MX
-    const n = String(numero).replace(/\D/g, '');
-    let localN = n;
-    if (n.length === 13 && n.startsWith('521')) localN = n.slice(3);
-    else if (n.length === 12 && n.startsWith('52')) localN = n.slice(2);
-    else if (n.length === 11 && n.startsWith('1')) localN = n.slice(1);
+    // Normalizar a puros dígitos
+    const cleanTo = String(numero).replace(/\D/g, '');
 
-    if (localN.length !== 10) {
-      return { numero: numero, normalized: null, exists: false, jid: null, error: 'Número inválido (no tiene 10 dígitos)' };
+    if (!cleanTo || cleanTo.length < 8) {
+      return { numero, normalized: null, exists: false, jid: null, error: `Número muy corto (${numero})` };
     }
 
-    const variations = [`52${localN}@s.whatsapp.net`, `521${localN}@s.whatsapp.net`];
+    // Intentar con timeout para evitar cuelgues en bases grandes
+    const withTimeout = (promise, ms) =>
+      Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+
+    // Calcular variaciones a probar
+    let variations = [`${cleanTo}@s.whatsapp.net`];
+
+    // Lógica para México: probar ambas variantes para máxima compatibilidad
+    if (cleanTo.length === 13 && cleanTo.startsWith('521')) {
+      variations.push(`52${cleanTo.substring(3)}@s.whatsapp.net`);
+    } else if (cleanTo.length === 12 && cleanTo.startsWith('52')) {
+      variations.push(`521${cleanTo.substring(2)}@s.whatsapp.net`);
+    }
+
     try {
       for (const v of variations) {
-        const result = await session.sock.onWhatsApp(v);
+        const result = await withTimeout(session.sock.onWhatsApp(v), 8000);
         if (result && result.length > 0 && result[0].exists) {
-          return { numero: numero, normalized: localN, exists: true, jid: result[0].jid };
+          return { numero, normalized: cleanTo, exists: true, jid: result[0].jid };
         }
       }
-      return { numero: numero, normalized: localN, exists: false, jid: null };
+      return { numero, normalized: cleanTo, exists: false, jid: null };
     } catch (err) {
-      return { numero: numero, normalized: localN, exists: false, jid: null, error: err.message };
+      // En timeout o error: marcar como no verificado en lugar de bloquear
+      return { numero, normalized: cleanTo, exists: false, jid: null, error: err.message === 'timeout' ? 'Tiempo de espera agotado' : err.message };
     }
   }
 }
+
 
 module.exports = SessionManager;

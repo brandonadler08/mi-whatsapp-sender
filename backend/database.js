@@ -107,6 +107,8 @@ async function init() {
     `ALTER TABLE batches  ADD COLUMN owner_id TEXT`,
     `ALTER TABLE users    ADD COLUMN parent_id TEXT`,
     `ALTER TABLE replies  ADD COLUMN asesor_id TEXT`,
+    `ALTER TABLE replies  ADD COLUMN tag TEXT`,
+    `ALTER TABLE replies  ADD COLUMN cuenta TEXT`,
     `CREATE INDEX IF NOT EXISTS idx_sess_owner  ON sessions(owner_id)`,
     `CREATE INDEX IF NOT EXISTS idx_batch_owner ON batches(owner_id)`,
     `CREATE INDEX IF NOT EXISTS idx_user_parent ON users(parent_id)`,
@@ -260,15 +262,33 @@ const stmts = {
     });
   },
 
+  // Buscar el nombre/cuenta de un número en mensajes enviados anteriormente
+  getCuentaByNumero(numero) {
+    // Normalizamos quitando prefijo 52/521 para comparar solo el móvil de 10 dígitos
+    const n = String(numero).replace(/\D/g, '');
+    let local = n;
+    if (n.length === 13 && n.startsWith('521')) local = n.slice(3);
+    else if (n.length === 12 && n.startsWith('52')) local = n.slice(2);
+    else if (n.length === 11 && n.startsWith('1')) local = n.slice(1);
+    // Buscar por cualquier variante del número
+    const row = get(`
+      SELECT cuenta FROM messages
+      WHERE (numero = :n OR numero = :n10 OR numero LIKE :nlike)
+        AND cuenta IS NOT NULL AND cuenta != ''
+      ORDER BY rowid DESC LIMIT 1
+    `, { ':n': numero, ':n10': local, ':nlike': `%${local}` });
+    return row ? row.cuenta : null;
+  },
 
 
   // ── Replies ────────────────────────────────────────────────────────────────
   insertReply(r) {
-    run(`INSERT OR IGNORE INTO replies (id, session_id, from_number, author_name, message_text, timestamp, is_read, asesor_id)
-         VALUES (:id, :session_id, :from_number, :author_name, :message_text, :timestamp, 0, :asesor_id)`, {
+    run(`INSERT OR IGNORE INTO replies (id, session_id, from_number, author_name, message_text, timestamp, is_read, asesor_id, cuenta)
+         VALUES (:id, :session_id, :from_number, :author_name, :message_text, :timestamp, 0, :asesor_id, :cuenta)`, {
       ':id': r.id, ':session_id': r.session_id, ':from_number': r.from_number,
       ':author_name': r.author_name || '', ':message_text': r.message_text || '',
-      ':timestamp': r.timestamp, ':asesor_id': r.asesor_id || null
+      ':timestamp': r.timestamp, ':asesor_id': r.asesor_id || null,
+      ':cuenta': r.cuenta || null
     });
   },
 
@@ -459,22 +479,18 @@ const stmts = {
   // Contactos agrupados por número que han respondido en una sesión
   getReplyContacts(clientId, ownerId, limit = 500) {
     const params = { ':session': clientId, ':limit': limit || 500 };
-    let ownerFilter = '';
-    if (ownerId) {
-      ownerFilter = `AND r.owner_id = :owner`;
-      params[':owner'] = ownerId;
-    }
     return all(`
       SELECT
         r.from_number,
         r.session_id,
-        MAX(r.message) as last_message,
-        MAX(r.received_at) as last_time,
+        r.author_name,
+        MAX(r.message_text) as last_message,
+        MAX(r.timestamp)    as last_time,
         SUM(CASE WHEN r.is_read = 0 THEN 1 ELSE 0 END) as unread_count,
-        MAX(r.tag) as tag,
-        MAX(r.cuenta) as cuenta
+        MAX(r.tag)     as tag,
+        MAX(r.cuenta)  as cuenta
       FROM replies r
-      WHERE r.session_id = :session ${ownerFilter}
+      WHERE r.session_id = :session
       GROUP BY r.from_number, r.session_id
       ORDER BY last_time DESC
       LIMIT :limit
@@ -497,12 +513,12 @@ const stmts = {
     // Respuestas recibidas (inbound)
     const received = all(`
       SELECT
-        r.id, r.from_number, r.message, r.session_id,
-        r.received_at as ts, 'in' as direction,
-        r.is_read, r.tag, r.cuenta
+        r.id, r.from_number, r.message_text as message, r.session_id,
+        r.timestamp as ts, 'in' as direction,
+        r.is_read, r.tag, r.author_name as cuenta
       FROM replies r
       WHERE r.session_id = :session AND r.from_number = :from
-      ORDER BY r.received_at ASC
+      ORDER BY r.timestamp ASC
     `, params);
 
     return [...sent, ...received].sort((a, b) => new Date(a.ts) - new Date(b.ts));
@@ -513,7 +529,7 @@ const stmts = {
     run(`UPDATE replies SET is_read = 1
          WHERE session_id = :session AND from_number = :from AND is_read = 0`,
       { ':session': sessionId, ':from': fromNumber });
-    schedSave();
+    saveToDisk();
   },
 
   // Etiquetar conversación (guarda la etiqueta en el último reply del contacto)
@@ -521,13 +537,13 @@ const stmts = {
     run(`UPDATE replies SET tag = :tag
          WHERE session_id = :session AND from_number = :from`,
       { ':tag': tag, ':session': sessionId, ':from': fromNumber });
-    schedSave();
+    saveToDisk();
   },
 
   // Eliminar un reply individual
   deleteReply(id) {
     run(`DELETE FROM replies WHERE id = :id`, { ':id': id });
-    schedSave();
+    saveToDisk();
   },
 };
 

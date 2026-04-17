@@ -145,22 +145,27 @@ function renderInboxContacts() {
 
   list.innerHTML = contacts.map(c => {
     const active = c.from_number === inboxCRM.activeContact ? 'active' : '';
-    const name = String(c.cuenta || c.from_number || '—');
-    const letter = name.charAt(0).toUpperCase();
+    // Prioridad: cuenta (del XLSX "Cliente_Unico") > author_name (nombre WhatsApp) > número
+    const displayName = String(c.cuenta || c.author_name || c.from_number || '—');
+    const hasName = !!(c.cuenta || c.author_name);
+    const letter = displayName.charAt(0).toUpperCase();
 
     const preview = c.last_message ? esc(String(c.last_message).slice(0, 55)) : '—';
     const ts = c.last_time ? relativeTime(c.last_time) : '';
     const unreadBadge = c.unread_count > 0
       ? `<span class="inbox-contact-unread">${c.unread_count}</span>` : '';
     const tagHtml = c.tag ? `<span class="inbox-tag inbox-tag-${c.tag}">${tagLabel(c.tag)}</span>` : '';
+    const phoneSubtitle = hasName
+      ? `<div style="font-size:10px;color:var(--text-3);margin-top:1px">${esc(c.from_number)}</div>` : '';
 
     return `
       <div class="inbox-contact-item ${active}"
-        onclick="openInboxConversation('${esc(c.from_number)}','${esc(name)}', '${esc(c.tag || '')}', this)"
+        onclick="openInboxConversation('${esc(c.from_number)}','${esc(displayName)}', '${esc(c.tag || '')}', this)"
         data-number="${esc(c.from_number)}">
         <div class="inbox-contact-avatar">${esc(letter)}</div>
         <div class="inbox-contact-meta">
-          <div class="inbox-contact-name">${esc(name)}</div>
+          <div class="inbox-contact-name">${esc(displayName)}</div>
+          ${phoneSubtitle}
           <div class="inbox-contact-preview">${preview}</div>
           <div style="display:flex;align-items:center;gap:6px;margin-top:3px">
             ${tagHtml}
@@ -279,6 +284,7 @@ async function sendInboxReply() {
   try {
     const res = await apiFetch('/api/send', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ clientId: inboxCRM.activeSession, to: inboxCRM.activeContact, message: msg }),
     });
     const data = await res.json();
@@ -439,8 +445,8 @@ function applyUserRole() {
     document.getElementById('nav-users').innerHTML = '<span class="icon">👥</span> Usuarios Totales';
   }
 
-  document.getElementById('nav-training').style.display = isAdmin ? '' : 'none';
-  // document.getElementById('nav-proxies').style.display = isAdmin ? '' : 'none';
+  document.getElementById('nav-training').style.display = (isAdmin || isUser) ? '' : 'none';
+  document.getElementById('nav-proxies').style.display = (isAdmin || isUser) ? '' : 'none';
 
   if (isAsesor) {
     ['nav-sessions', 'nav-send', 'nav-bulk', 'nav-reports', 'nav-history'].forEach(id => {
@@ -593,6 +599,63 @@ function initSocket() {
     showToast(`Error en sesión: ${error}`, 'error');
   });
 
+  // ── Validator Socket events ──────────────────────────────────────────────────
+  socket.on('validator:start', ({ total, sessions }) => {
+    const bar = document.getElementById('val-progress-bar');
+    const text = document.getElementById('val-progress-text');
+    const btn = document.getElementById('btn-val-bulk');
+    if (bar) bar.style.width = '0%';
+    if (text) text.textContent = `0 / ${total.toLocaleString()}`;
+    if (btn) btn.textContent = `⚡ Validando con ${sessions} sesión(es)…`;
+    document.getElementById('val-progress-wrap').style.display = 'block';
+    validatorResults.length = 0;
+    updateValidatorStats();
+  });
+
+  socket.on('validator:progress', ({ index, total, result, withWA, withoutWA, errors }) => {
+    const bar = document.getElementById('val-progress-bar');
+    const text = document.getElementById('val-progress-text');
+    const pct = total > 0 ? Math.round((index / total) * 100) : 0;
+    if (bar) bar.style.width = `${pct}%`;
+    if (text) text.textContent = `${index.toLocaleString()} / ${total.toLocaleString()}`;
+    updateValEta(index, total);
+
+    // Agregar resultado a la tabla
+    const entry = {
+      numero: result.numero,
+      hasWhatsapp: result.exists,
+      jid: result.jid || '',
+      hora: new Date(result.timestamp).toLocaleTimeString('es-MX')
+    };
+    validatorResults.push(entry);
+
+    // Actualizar stats
+    const okEl = document.getElementById('val-ok');
+    const failEl = document.getElementById('val-fail');
+    const totalEl = document.getElementById('val-total');
+    const rateEl = document.getElementById('val-rate');
+    if (okEl) okEl.textContent = withWA;
+    if (failEl) failEl.textContent = withoutWA;
+    if (totalEl) totalEl.textContent = index;
+    if (rateEl) rateEl.textContent = index > 0 ? `${Math.round((withWA / index) * 100)}%` : '—';
+
+    // Solo re-renderizar tabla cada 10 resultados para eficiencia
+    if (index % 10 === 0 || index === total) renderValidatorTable();
+  });
+
+  socket.on('validator:complete', ({ total, withWA, withoutWA, errors }) => {
+    renderValidatorTable();
+    resetValidatorUI(true);
+    showToast(`✅ Validación completa: ${withWA.toLocaleString()} con WA, ${withoutWA.toLocaleString()} sin WA, ${errors} errores`, 'success', 6000);
+    log('ok', `🔍 Validación completa: ${total} números — ${withWA} con WhatsApp (${Math.round((withWA/total)*100)}%)`);
+  });
+
+  socket.on('validator:stopped', ({ done, total, withWA }) => {
+    renderValidatorTable();
+    resetValidatorUI(done > 0);
+    showToast(`⏹ Validación detenida en ${done}/${total} (${withWA} con WhatsApp)`, 'info');
+  });
+
   socket.on('reply:new', (replyData) => {
     if (auth.user?.role !== 'superadmin' && !state.sessions[replyData.clientId]) return;
 
@@ -612,8 +675,8 @@ function initSocket() {
         // Agregar o actualizar contacto en la lista
         const existing = inboxCRM.contacts.find(c => c.from_number === replyData.from_number);
         if (existing) {
-          existing.last_message = replyData.message;
-          existing.last_time = replyData.received_at;
+          existing.last_message = replyData.message_text;
+          existing.last_time = replyData.timestamp;
           existing.unread_count = (existing.unread_count || 0) + 1;
           // Mover al tope
           inboxCRM.contacts = [existing, ...inboxCRM.contacts.filter(c => c.from_number !== replyData.from_number)];
@@ -621,18 +684,18 @@ function initSocket() {
           inboxCRM.contacts.unshift({
             from_number: replyData.from_number,
             session_id: replyData.clientId,
-            last_message: replyData.message,
-            last_time: replyData.received_at,
+            last_message: replyData.message_text,
+            last_time: replyData.timestamp,
             unread_count: 1,
             tag: null,
-            cuenta: replyData.cuenta || replyData.from_number,
+            cuenta: replyData.author_name || replyData.from_number,
           });
         }
         renderInboxContacts();
 
         // Si además este contacto está abierto en col3, añadir burbuja
         if (inboxCRM.activeContact === replyData.from_number) {
-          appendChatBubble({ direction: 'in', message: replyData.message, ts: replyData.received_at });
+          appendChatBubble({ direction: 'in', message: replyData.message_text, ts: replyData.timestamp });
           // Marcar como leído en caliente
           if (existing) existing.unread_count = 0;
           apiFetch('/api/replies/all/read', { method: 'PUT' }).catch(() => {});
@@ -793,7 +856,7 @@ function navigate(page) {
 async function loadTrainingSessions() {
   // Refresca sesiones desde el servidor para garantizar datos actualizados
   try {
-    const res = await apiFetch('/api/sessions');
+    const res = await apiFetch('/api/sessions?context=training');
     if (res.ok) {
       const data = await res.json();
       // Actualizar state.sessions con la lista del servidor (preserva el QR local)
@@ -1012,7 +1075,7 @@ async function validateSingle() {
   const btn = document.getElementById('btn-val-single');
   btn.disabled = true; btn.textContent = '...';
   try {
-    const res = await apiFetch('/api/check-whatsapp', {
+    const res = await apiFetch('/api/check-number', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ clientId, numero: num })
@@ -1032,48 +1095,128 @@ async function validateSingle() {
   }
 }
 
+// Cargar archivo XLSX / CSV / TXT para el validador
+async function loadValidatorFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  document.getElementById('val-file-name').textContent = file.name;
+
+  const ext = file.name.split('.').pop().toLowerCase();
+  let nums = [];
+
+  if (ext === 'txt' || ext === 'csv') {
+    const text = await file.text();
+    nums = text.split(/[\r\n,;]+/).map(n => n.trim()).filter(n => /^\d{8,15}$/.test(n));
+  } else if (ext === 'xlsx' || ext === 'xls') {
+    const buf = await file.arrayBuffer();
+    const workbook = XLSX.read(buf, { type: 'array' });
+    const ws = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+    // Buscar columna "numero" o "phone" o la primera columna con dígitos
+    const key = Object.keys(rows[0] || {}).find(k => /numero|phone|tel|celular/i.test(k)) || Object.keys(rows[0] || {})[0];
+    nums = rows.map(r => String(r[key] || '').replace(/\D/g, '')).filter(n => n.length >= 8);
+  }
+
+  if (!nums.length) { showToast('No se encontraron números válidos en el archivo', 'error'); return; }
+
+  // Poner en el textarea
+  document.getElementById('val-bulk-input').value = nums.join('\n');
+  updateValCount();
+  showToast(`${nums.length} números cargados desde "${file.name}"`, 'success');
+  input.value = ''; // Reset para poder cargar de nuevo
+}
+
+function updateValCount() {
+  const raw = document.getElementById('val-bulk-input').value;
+  const count = raw.split('\n').map(n => n.trim()).filter(n => n.length >= 8).length;
+  const el = document.getElementById('val-count-label');
+  if (el) el.textContent = count > 0 ? `${count.toLocaleString()} números` : '0 números';
+}
+
+// Velocidad / ETA del validador
+let valStartTime = null;
+let valTotalNums = 0;
+
+function updateValEta(done, total) {
+  if (!valStartTime || done === 0) return;
+  const elapsed = (Date.now() - valStartTime) / 1000; // segundos
+  const rate = done / elapsed; // nums/seg
+  const remaining = total - done;
+  const etaSecs = rate > 0 ? Math.round(remaining / rate) : 0;
+
+  const speed = rate < 1 ? `${(rate * 60).toFixed(1)}/min` : `${rate.toFixed(1)}/seg`;
+  document.getElementById('val-speed-label').textContent = `velocidad: ${speed}`;
+
+  if (etaSecs < 60) document.getElementById('val-eta').textContent = `${etaSecs}s`;
+  else if (etaSecs < 3600) document.getElementById('val-eta').textContent = `${Math.floor(etaSecs/60)}m ${etaSecs%60}s`;
+  else document.getElementById('val-eta').textContent = `${Math.floor(etaSecs/3600)}h ${Math.floor((etaSecs%3600)/60)}m`;
+}
+
+function resetValidatorUI(completed = false) {
+  const btn = document.getElementById('btn-val-bulk');
+  const btnStop = document.getElementById('btn-val-stop');
+  if (btn) { btn.disabled = false; btn.textContent = '🔍 Iniciar Validación Masiva'; }
+  if (btnStop) btnStop.style.display = 'none';
+  if (completed) document.getElementById('btn-export-validator').style.display = '';
+  document.getElementById('val-eta-box').style.display = 'none';
+  document.getElementById('val-progress-wrap').style.display = 'none';
+}
+
 async function validateBulk() {
   const raw = document.getElementById('val-bulk-input').value.trim();
-  if (!raw) { showToast('Ingresa al menos un número', 'error'); return; }
-  const clientId = getValidatorSession();
-  if (!clientId) return;
-  const nums = [...new Set(raw.split('\n').map(n => n.trim()).filter(n => n.length >= 8))].slice(0, 500);
+  if (!raw) { showToast('Ingresa o importa números primero', 'error'); return; }
+
+  const nums = [...new Set(raw.split('\n').map(n => n.trim()).filter(n => n.length >= 8))];
   if (!nums.length) { showToast('Sin números válidos', 'error'); return; }
+  if (nums.length > 50000) { showToast('Máximo 50,000 números por lote', 'error'); return; }
+
+  validatorResults.length = 0; // Limpiar resultados anteriores
+  updateValidatorStats();
 
   const btn = document.getElementById('btn-val-bulk');
+  const btnStop = document.getElementById('btn-val-stop');
   const progress = document.getElementById('val-progress-wrap');
   const bar = document.getElementById('val-progress-bar');
   const text = document.getElementById('val-progress-text');
-  btn.disabled = true; btn.textContent = '⏳ Validando...';
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Enviando al servidor...';
+  if (btnStop) btnStop.style.display = '';
   progress.style.display = 'block';
+  bar.style.width = '0%';
+  text.textContent = `0 / ${nums.length}`;
 
-  let done = 0;
-  for (const num of nums) {
-    try {
-      const res = await apiFetch('/api/check-whatsapp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId, numero: num })
-      });
-      const data = await res.json();
-      const entry = { numero: num, hasWhatsapp: data.hasWhatsapp, jid: data.jid || '', hora: new Date().toLocaleTimeString('es-MX') };
-      validatorResults.unshift(entry);
-    } catch (e) {
-      validatorResults.unshift({ numero: num, hasWhatsapp: false, jid: 'Error', hora: new Date().toLocaleTimeString('es-MX') });
-    }
-    done++;
-    const pct = Math.round((done / nums.length) * 100);
-    bar.style.width = `${pct}%`;
-    text.textContent = `${done} / ${nums.length}`;
-    updateValidatorStats();
-    renderValidatorTable();
-    await new Promise(r => setTimeout(r, 1500)); // delay entre validaciones
+  valStartTime = Date.now();
+  valTotalNums = nums.length;
+
+  document.getElementById('val-eta-box').style.display = 'block';
+  document.getElementById('val-eta').textContent = 'Calculando…';
+
+  try {
+    const res = await apiFetch('/api/check-numbers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ numeros: nums })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    btn.textContent = `⚡ Validando ${data.total.toLocaleString()} números con ${data.sessions} sesión(es)…`;
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+    resetValidatorUI(false);
   }
-
-  btn.disabled = false; btn.textContent = '🔍 Iniciar Validación Masiva';
-  document.getElementById('btn-export-validator').style.display = '';
-  showToast(`Validación completa: ${nums.length} números procesados`, 'success');
 }
+
+async function stopValidator() {
+  try {
+    await apiFetch('/api/check-numbers/stop', { method: 'POST' });
+    showToast('Deteniendo validación…', 'info');
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  }
+}
+
+
 
 function updateValidatorStats() {
   const ok  = validatorResults.filter(r => r.hasWhatsapp).length;
